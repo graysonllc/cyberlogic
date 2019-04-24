@@ -16,9 +16,11 @@ import redis
 from datetime import datetime
 import configparser
 
-binance_api_key=config['binance']['API_KEY']
-binance_api_secret=config['binance']['API_SECRET']
-telegram_id=config['binance']['TELEGRAM_ID']
+config.read('/root/akeys/b.conf')
+mysql_username=config['mysql']['MYSQL_USERNAME']
+mysql_password=config['mysql']['MYSQL_PASSWORD']
+mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+mysql_database=config['mysql']['MYSQL_DATABASE']
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -41,6 +43,10 @@ def get_exchange():
 	config = configparser.ConfigParser()
 	config.read('/root/akeys/b.conf')
 	conf=config['binance']
+	
+	binance_api_key=config['binance']['API_KEY']
+	binance_api_secret=config['binance']['API_SECRET']
+	telegram_id=config['binance']['TELEGRAM_ID']
 	
 	exchange = ccxt.binance({
     'apiKey': binance_api_key,
@@ -103,8 +109,7 @@ def get_rsi(bot, update, args):
 
 def get_articles(ftype):
 	
-
-	db=pymysql.connect("localhost","root",'DymoJedi@2017!',"cmc")
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
 	cursor = db.cursor(pymysql.cursors.DictCursor)
 	
 	sql = """SELECT datetime,user,coin,score,link from news_reviews where date>=%s and ftype=%s order by datetime desc limit 5"""
@@ -135,7 +140,7 @@ def get_articles(ftype):
 def query_ath(name):
 
 	try:
-		db=pymysql.connect("localhost","root",'DymoJedi@2017!',"cmc")
+		db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
 		cursor = db.cursor()
 		sql = """SELECT ath_date,price from aths where coin=%s"""
 		cursor.execute(sql,(name))
@@ -150,8 +155,7 @@ def query_ath(name):
 	db.close()
 
 def get_score(ftype):
-	
-	db=pymysql.connect("localhost","root",'DymoJedi@2017!',"cmc")
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)	
 	cursor = db.cursor(pymysql.cursors.DictCursor)
 	
 	sql = """
@@ -190,7 +194,7 @@ def fud(bot, update, args):
 	
 	username = update.message.from_user.first_name
 	
-	db=pymysql.connect("localhost","root",'DymoJedi@2017!',"cmc")
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
 	cursor = db.cursor()
 
 	sql = """
@@ -251,7 +255,7 @@ def fomo(bot, update, args):
 	
 	username = update.message.from_user.first_name
 	
-	db=pymysql.connect("localhost","root",'DymoJedi@2017!',"cmc")
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
 	cursor = db.cursor()
 
 	sql = """
