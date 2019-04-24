@@ -16,11 +16,13 @@ import redis
 from datetime import datetime
 import configparser
 
+config = configparser.ConfigParser()
 config.read('/root/akeys/b.conf')
 mysql_username=config['mysql']['MYSQL_USERNAME']
 mysql_password=config['mysql']['MYSQL_PASSWORD']
 mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
 mysql_database=config['mysql']['MYSQL_DATABASE']
+telegram_id=config['binance']['TELEGRAM_ID']
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -46,7 +48,6 @@ def get_exchange():
 	
 	binance_api_key=config['binance']['API_KEY']
 	binance_api_secret=config['binance']['API_SECRET']
-	telegram_id=config['binance']['TELEGRAM_ID']
 	
 	exchange = ccxt.binance({
     'apiKey': binance_api_key,
