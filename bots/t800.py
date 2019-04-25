@@ -22,7 +22,7 @@ mysql_username=config['mysql']['MYSQL_USERNAME']
 mysql_password=config['mysql']['MYSQL_PASSWORD']
 mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
 mysql_database=config['mysql']['MYSQL_DATABASE']
-telegram_id=config['binance']['TELEGRAM_ID']
+telegram_id=config['binance']['TEEGRAM_ID_EMBED']
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -30,14 +30,16 @@ sys.path.append(root + '/python')
 	
 r = redis.Redis(host='localhost', port=6379, db=0)
 
+conn = redis.Redis('127.0.0.1')
+
 #Name of bot PyCryptoBot
 
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+print(telegram_id)
 updater = Updater(token=telegram_id)
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
 
 def get_exchange():
 	
@@ -540,24 +542,152 @@ def sell(bot, update,args):
 
 		bot.send_message(chat_id=update.message.chat_id, text=message)
 
-def add_bot(bot, update, args):
+def delete_bot(bot, update, args):
 	bot_name=args[0]
-	if r.sismember("botlist", bot_name):
-		ts=float(r.get(bot_name).decode('utf-8'))
-		running=datetime.fromtimestamp(ts).strftime("%A, %B %d, %Y %I:%M:%S")
-		txt="we allready have a bot running called: "+str(bot_name)+" Its been Running since: "+str(running)
-		bot.send_message(chat_id=update.message.chat_id, text=txt)	
-	else:
+	print(bot_name)
+	ret="::Crypto Logic Deleted bot: "+str(bot_name)
+	r.srem("botlist", bot_name)
+	r.delete(bot_name)
+	redis_key="bconfig-"+bot_name
+
+	r.hdel(redis_key,'*')
+	bot.send_message(chat_id=update.message.chat_id, text=ret)
+
+def add_bot(bot, update, args):
+
+	r = redis.Redis(host='localhost', port=6379, db=0)
+	
+	var1=args[0]
+	
+	if var1=="confirm":
+	
+		redis_key="bconfig-tmp"
+		all=conn.hgetall(redis_key)
+		
+		trading_on=conn.hget(redis_key,"trading_on")
+		trading_on=trading_on.decode('utf-8')
+		rsi_symbol=conn.hget(redis_key,"rsi_symbol")
+		rsi_symbol=rsi_symbol.decode('utf-8')
+		symbol=conn.hget(redis_key,"symbol")
+		symbol=symbol.decode('utf-8')
+		units=conn.hget(redis_key,"units")
+		units=units.decode('utf-8')
+		trade_from=conn.hget(redis_key,"trade_from")
+		trade_from=trade_from.decode('utf-8')
+		trade_to=conn.hget(redis_key,"trade_to")
+		trade_to=trade_to.decode('utf-8')
+		buy_pos=conn.hget(redis_key,"buy_pos")
+		buy_pos=buy_pos.decode('utf-8')
+		sell_pos=conn.hget(redis_key,"sell_pos")
+		sell_pos=sell_pos.decode('utf-8')
+		stoploss_percent=conn.hget(redis_key,"stoploss_percent")
+		stoploss_percent=stoploss_percent.decode('utf-8')
+		safeguard_percent=conn.hget(redis_key,"safeguard_percent")
+		safeguard_percent=safeguard_percent.decode('utf-8')
+		use_stoploss=conn.hget(redis_key,"use_stoploss")
+		use_stoploss=use_stoploss.decode('utf-8')
+		candle_size=conn.hget(redis_key,"candle_size")
+		candle_size=candle_size.decode('utf-8')
+		rsi_buy=conn.hget(redis_key,"rsi_buy")
+		rsi_buy=rsi_buy.decode('utf-8')
+		rsi_sell=conn.hget(redis_key,"rsi_sell")
+		rsi_sell=rsi_sell.decode('utf-8')
+		live=conn.hget(redis_key,"live")
+		live=live.decode('utf-8')
+		bot_name=symbol
+		
 		r.sadd("botlist", bot_name)
 		now = datetime.now()
 		timestamp = datetime.timestamp(now)
-		r.set(bot_name,timestamp)
+		r.set(symbol,timestamp)
 		running=datetime.fromtimestamp(timestamp).strftime("%A, %B %d, %Y %I:%M:%S")
-		text="Created Bot Successfully: "+str(bot_name)+" On: "+str(running)
-		#bot.send_message(chat_id=update.message.chat_id, text=txt)	
+	
+		redis_key="bconfig-"+symbol
+		
+		conn.hmset(redis_key, all)
 
-		bot.send_message(chat_id=update.message.chat_id, text="tat")	
+		ret="::Crypto Logic new bot: "+str(symbol)+" has been spawned on - "+str(running)
+		ret=ret+"\n\n::Exchange: "+trading_on
+		ret=ret+"\n::Trade Pair: "+str(symbol)
+		ret=ret+"\n::Units: "+str(units)
+		ret=ret+"\n::Buy Book Scrape Position: "+str(buy_pos)
+		ret=ret+"\n::Sell Book Scrape Position: "+str(sell_pos)
+		ret=ret+"\n::RSI Buy: "+str(rsi_buy)
+		ret=ret+"\n::RSI Sell: "+str(rsi_sell)
+		ret=ret+"\n::Stoploss Percent: "+str(stoploss_percent)
+		ret=ret+"\n::Safeguard Percent: "+str(safeguard_percent)
+		ret=ret+"\n::Candle Size: "+candle_size
+		ret=ret+"\n::Stoploss Enabled: "+str(use_stoploss)
+		ret=ret+"\n::Live Trading Enabled: "+live
+		ret=ret+"\n::TA Candle Size: "+candle_size
+		ret=ret+"\n\nIf you ever want to kill it issue /deletebot "+str(symbol)
+		bot.send_message(chat_id=update.message.chat_id, text=ret)	
 
+	else:
+		
+		trading_on=args[0]
+		rsi_symbol=args[1]
+		trading_pair=args[2]
+		units=args[3]
+		trade_from=args[4]
+		trade_to=args[5]
+		buy_pos=args[6]
+		sell_pos=args[7]
+		stoploss_percent=args[8]
+		use_stoploss=args[9]
+		candle_size=args[10]
+		safeguard_percent=args[11]
+		rsi_buy=args[12]
+		rsi_sell=args[13]
+		live=args[14]
+		bot_name=trading_pair
+		symbol=bot_name
+		if r.sismember("botlist", trading_pair):
+			ts=float(r.get(bot_name).decode('utf-8'))
+			print(ts)
+			running=datetime.fromtimestamp(ts).strftime("%A, %B %d, %Y %I:%M:%S")
+			txt="we allready have a bot running called: "+str(bot_name)+" Its been Running since: "+str(running)
+			bot.send_message(chat_id=update.message.chat_id, text=txt)	
+		else:	
+			ret="::Crypto Logic Please review the settings for new bot: "+str(symbol)
+			ret=ret+"\n\n::Exchange: "+trading_on
+			ret=ret+"\n::Trade Pair: "+str(symbol)
+			ret=ret+"\n::Units: "+str(units)
+			ret=ret+"\n::Buy Book Scrape Position: "+str(buy_pos)
+			ret=ret+"\n::Sell Book Scrape Position: "+str(sell_pos)
+			ret=ret+"\n::RSI Buy: "+str(rsi_buy)
+			ret=ret+"\n::RSI Sell: "+str(rsi_sell)
+			ret=ret+"\n::Stoploss Percent: "+str(stoploss_percent)
+			ret=ret+"\n::Safeguard Percent: "+str(safeguard_percent)
+			ret=ret+"\n::Candle Size: "+candle_size
+			ret=ret+"\n::Stoploss Enabled: "+str(use_stoploss)
+			ret=ret+"\n::Live Trading Enabled: "+live
+			ret=ret+"\n::TA Candle Size: "+candle_size
+			ret=ret+"\n\nIf you have reviewed all settings carefully reply with /addbot confirm to execute!"
+
+			bot_config = {"trading_on":str(trading_on),
+			"rsi_symbol":str(rsi_symbol), 
+			"symbol":str(bot_name), 
+			"units":float(units), 
+			"trade_from":str(trade_from), 
+			"trade_to":str(trade_to), 
+			"buy_pos":int(buy_pos),
+			"sell_pos":int(sell_pos),
+			"stoploss_percent":float(stoploss_percent),
+			"use_stoploss":use_stoploss,
+			"candle_size":str(candle_size),
+			"safeguard_percent":float(safeguard_percent),
+			"rsi_buy":float(rsi_buy),
+			"rsi_sell":float(rsi_sell),
+			"live":str(live)}
+			
+			print(bot_config)
+			ksymbol=str(symbol)
+
+			redis_key="bconfig-tmp"
+			conn.hmset(redis_key, bot_config)
+			bot.send_message(chat_id=update.message.chat_id, text=ret)
+	
 def list_bots(bot, update, args):
 	#args[0]="twat"
 	#meh=args[0]
@@ -703,7 +833,9 @@ price_handler=CommandHandler('price', price,pass_args=True)
 stoploss_handler=CommandHandler('stoploss', stoploss,pass_args=True)
 list_bots_handler=CommandHandler('listbots', list_bots,pass_args=True)
 add_bot_handler=CommandHandler('addbot', add_bot,pass_args=True)
+delete_bot_handler=CommandHandler('deletebot', delete_bot,pass_args=True)
 
+dispatcher.add_handler(delete_bot_handler)
 dispatcher.add_handler(add_bot_handler)
 dispatcher.add_handler(rsi_handler)
 dispatcher.add_handler(start_handler)

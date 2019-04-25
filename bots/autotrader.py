@@ -168,8 +168,8 @@ def main(exchange,symbol):
 
 	redis_key="bconfig-"+symbol
 	print(redis_key)
-		
-	trading_on=conn.hget(redis_key,"exchange")
+	print(conn.hgetall(redis_key))	
+	trading_on=conn.hget(redis_key,"trading_on")
 	trading_on=trading_on.decode('utf-8')
 	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
 	rsi_symbol=rsi_symbol.decode('utf-8')
