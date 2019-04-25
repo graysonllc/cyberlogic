@@ -1,29 +1,54 @@
 import redis
 import sys
+import argparse
+
 conn = redis.Redis('127.0.0.1')
 
 cleaned={}
 
-bot_config = {"exchange":"Binance", 
-"rsi_symbol":"BTC/USDT", 
-"symbol":"BTCUSDT", 
-"units":"0.005",
-"trade_from":"BTC",
-"trade_to":"USDT",
-"buy_pos":"1",
-"sell_pos":"1",
-"stoploss_percent":"1",
-"use_stoploss":"1",
-"candle_size":"5m",
-"rsi_buy":"20",
-"rsi_sell":"80",
-"safeguard_percent":"2",
-"live":"1"}
+parser = argparse.ArgumentParser()
+parser.add_argument('--exchange', help='Exchange name i.e binance')
+parser.add_argument('--rsi_symbol', help='RSI SYMBOL pair i.e IOTAUSDT')
+parser.add_argument('--trading_pair', help='Trading pair i.e BTC/USDT')
+parser.add_argument('--units', help='Number of coins to trade')
+parser.add_argument('--trade_from', help='I.E BTC')
+parser.add_argument('--trade_to', help='I.E USDT')
+parser.add_argument('--buy_position', help='Buy book position to clone')
+parser.add_argument('--sell_position', help='Sell book position to clone')
+parser.add_argument('--use_stoploss', help='1 to enable, 0 to disable')
+parser.add_argument('--candle_size', help='i.e 5m for 5 minutes')
+parser.add_argument('--safeguard_percent', help='safeguard percent if buying back cheaper')
+parser.add_argument('--stoploss_percent', help='stoploss percent')
+parser.add_argument('--rsi_buy', help='Rsi Number under to trigger a buy, i.e 20')
+parser.add_argument('--rsi_sell', help='Rsi Number over to trigger a sell, i.e 80')
+parser.add_argument('--live', help='1 for Live trading, 0 for dry testing.')
+args = parser.parse_args()
+
+#python3.6 redis-testing.py --exchange "Binance" --rsi_symbol='BTCUSDT' --trading_pair='BTC/USDT' --units '0.001' --trade_from 'BTC' --trade_to 'USDT' --buy_position '1' --sell_position '1' --use_stoploss '1' --candle_size '5m' --safeguard_percent '2' --stoploss_percent '1' --rsi_buy '20' --rsi_sell '80' --live '1'
+{'exchange': 'Binance', 'rsi_symbol': 'BTCUSDT', 'symbol': 'BTC/USDT', 'units': 0.001, 'trade_from': 'BTC', 'trade_to': 'USDT', 'buy_pos': 1, 'sell_position': 1, 'stoploss_percent': 1.0, 'use_stoploss': 1, 'candle_size': '5m', 'safeguard_percent': 2.0, 'rsi_buy': 20.0, 'rsi_sell': 80.0, 'live': 1.0}
+
+bot_config = {"exchange":str(args.exchange),
+"rsi_symbol":str(args.rsi_symbol), 
+"symbol":str(args.trading_pair), 
+"units":float(args.units), 
+"trade_from":str(args.trade_from), 
+"trade_to":str(args.trade_to), 
+"buy_pos":int(args.buy_position),
+"sell_position":int(args.buy_position),
+"stoploss_percent":float(args.buy_position),
+"use_stoploss":int(args.use_stoploss),
+"candle_size":str(args.candle_size),
+"safeguard_percent":float(args.safeguard_percent),
+"rsi_buy":float(args.rsi_buy),
+"rsi_sell":float(args.rsi_sell),
+"live":float(args.live)}
+
+print(bot_config)
+sys.exit("die")
 
 conn.hmset("bconfig", bot_config)
 
 bot_config_readback=conn.hgetall("bconfig")
-
 
 print(conn.hget("bconfig","exchange"))
 
