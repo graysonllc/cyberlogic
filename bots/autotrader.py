@@ -11,6 +11,9 @@ import pymysql
 import time
 import requests
 import redis
+import configparser
+
+config = configparser.ConfigParser()
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -155,12 +158,17 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 	else:
 		asks=ret['asks']
 		return asks
-def main(exchange):
+		
+def main(exchange,symbol):
 	
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
 	conn = redis.Redis('127.0.0.1')
 	
+
+	redis_key="bconfig-"+symbol
+	print(redis_key)
+		
 	trading_on=conn.hget(redis_key,"exchange")
 	trading_on=trading_on.decode('utf-8')
 	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
@@ -192,8 +200,29 @@ def main(exchange):
 	live=conn.hget(redis_key,"live")
 	live=live.decode('utf-8')
 
+	rsi_sell=float(rsi_sell)
+	rsi_buy=float(rsi_buy)
+	stoploss_percent=float(stoploss_percent)
+	safeguard_percent=float(safeguard_percent)
+	use_stoploss=int(use_stoploss)
+	units=float(units)
+	
+	print("Exchange: "+trading_on)
+	print("Trade Pair: "+symbol)
+	print("Units: "+str(units))
+	print("Buy Book Scrape Position: "+str(buy_pos))
+	print("Sell Book Scrape Position: "+str(sell_pos))
+	print("RSI Buy: "+str(rsi_buy))
+	print("RSI Sell: "+str(rsi_sell))
+	print("Stoploss Percent: "+str(stoploss_percent))
+	print("Safeguard Percent: "+str(safeguard_percent))
+	print("Candle Size: "+candle_size)
+	print("Stoploss Enabled: "+str(use_stoploss))
+	print("Live Trading Enabled: "+live)
+	print("TA Candle Size: "+candle_size)
+
 	key=str(symbol)+'-ORIGINAL-SL'	
-	mc.set(key,stoploss_per,864000)
+	mc.set(key,stoploss_percent,864000)
 	ignore_rsi=0
 	sleep_for_after_stoploss_executed=600
 	
@@ -264,7 +293,7 @@ def main(exchange):
 				try:
 					
 					if last_type=='BUY':
-						stoploss=last_price/100*stoploss_per
+						stoploss=last_price/100*stoploss_percent
 						stoploss_price=last_price-stoploss
 						
 						### ADD SMART STOPLOSS CODE
@@ -288,7 +317,7 @@ def main(exchange):
 							print("creating stoploss order: "+str(sell_price))
 							message="Alert Stoploss Hit line 260, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
 							broadcast(message)
-							if live==1:
+							if live=="yes":
 								ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
 							message="killing script never buy back here for :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
 							broadcast(message)	
@@ -322,7 +351,7 @@ def main(exchange):
 			mysql_database=config['mysql']['MYSQL_DATABASE']
 			telegram_id=config['binance']['TELEGRAM_ID']
 
-			db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
+			db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
 
 			cursor = db.cursor()
 	
@@ -370,7 +399,7 @@ def main(exchange):
 			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
 			message="Making Sell Order For "+str(units)+" Price: "+str(price)+" Last Buy Price: "+str(last_price)+str(add)
 			broadcast(message)
-			if live==1:
+			if live=="yes":
 				ret=exchange.create_order (symbol, 'limit', 'sell', units, price)
 			print(ret)
 			print("\nLive Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh: "+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n")
@@ -381,7 +410,7 @@ def main(exchange):
 				last_type=last_array['side']
 
 				if last_type=='BUY':
-					stoploss=last_price/100*stoploss_per
+					stoploss=last_price/100*stoploss_percent
 					stoploss_price=last_price-stoploss
 					
 					### ADD SMART STOPLOSS CODE
@@ -404,7 +433,7 @@ def main(exchange):
 						message="Alert Stoploss Hit 364, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
 						broadcast(message)
 						
-						if live==1:
+						if live=="yes":
 							ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
 	
 						message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
@@ -422,18 +451,19 @@ def main(exchange):
 
 mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
-symbol='BNB/USDT'
+parser = argparse.ArgumentParser()
 
-parser=argparse.ArgumentParser()
-parser.add_argument('--rsi_symbol', help='RSI SYMBOL pair i.e IOTAUSDT')
+parser.add_argument('--trading_pair', help='Trading pair i.e BTC/USDT')
 args = parser.parse_args()
-symbol=args.trading_pair
+
+symbol=str(args.trading_pair)
 
 while True:
 	ret="meh"
-	try:
-		ret=main(exchange)
-	except:
-		print("threw error sleeping for 3 seconds")
-	if ret=="kill":
-		sys.exit("die bitch")
+	#try:
+	ret=main(exchange,symbol)
+	#except:
+	#	print("threw error sleeping for 3 seconds")
+	#if ret=="kill":
+	#	sys.exit("die bitch")
+	time.sleep(5)

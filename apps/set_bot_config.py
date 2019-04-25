@@ -33,16 +33,18 @@ bot_config = {"exchange":str(args.exchange),
 "trade_from":str(args.trade_from), 
 "trade_to":str(args.trade_to), 
 "buy_pos":int(args.buy_position),
-"sell_position":int(args.buy_position),
-"stoploss_percent":float(args.buy_position),
+"sell_pos":int(args.sell_position),
+"stoploss_percent":float(args.stoploss_percent),
 "use_stoploss":int(args.use_stoploss),
 "candle_size":str(args.candle_size),
 "safeguard_percent":float(args.safeguard_percent),
 "rsi_buy":float(args.rsi_buy),
 "rsi_sell":float(args.rsi_sell),
-"live":float(args.live)}
+"live":str(args.live)}
 
-redis_key="bconfig-".symbol
+ksymbol=str(args.trading_pair)
+
+redis_key="bconfig-"+ksymbol
 conn.hmset(redis_key, bot_config)
 bot_config_readback=conn.hgetall(redis_key)
 
