@@ -10,6 +10,7 @@ import sys
 import pymysql
 import time
 import requests
+import redis
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -158,39 +159,38 @@ def main(exchange):
 	
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
-	parser=argparse.ArgumentParser()
-	parser.add_argument('--exchange', help='Exchange name i.e binance')
-	parser.add_argument('--rsi_symbol', help='RSI SYMBOL pair i.e IOTAUSDT')
-	parser.add_argument('--trading_pair', help='Trading pair i.e BTC/USDT')
-	parser.add_argument('--units', help='Number of coins to trade')
-	parser.add_argument('--trade_from', help='I.E BTC')
-	parser.add_argument('--trade_to', help='I.E USDT')
-	parser.add_argument('--buy_position', help='Buy book position to clone')
-	parser.add_argument('--sell_position', help='Sell book position to clone')
-	parser.add_argument('--use_stoploss', help='1 to enable, 0 to disable')
-	parser.add_argument('--candle_size', help='i.e 5m for 5 minutes')
-	parser.add_argument('--safeguard_percent', help='safeguard percent if buying back cheaper')
-	parser.add_argument('--rsi_buy', help='Rsi Number under to trigger a buy, i.e 20')
-	parser.add_argument('--rsi_sell', help='Rsi Number over to trigger a sell, i.e 80')
-	parser.add_argument('--live', help='1 for Live trading, 0 for dry testing.')
-
-	args = parser.parse_args()
-
-	trading_on=args.exchange
-	rsi_symbol=args.rsi_symbol
-	symbol=args.trading_pair
-	units=args.unit
-	trade_from=args.trade_from
-	trade_to=args.trade_to
-	buy_pos=args.buy_position	
-	sell_pos=args.sell_position
-	stoploss_percent=args.stoploss_percent
-	safeguard_percent=args.safeguard_percent
-	use_stoploss=args.use_stoploss
-	candle_size=args.candle_size
-	rsi_buy=args.rsi_buy
-	rsi_sell=args.rsi_sell
-	live=args.live
+	conn = redis.Redis('127.0.0.1')
+	
+	trading_on=conn.hget(redis_key,"exchange")
+	trading_on=trading_on.decode('utf-8')
+	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
+	rsi_symbol=rsi_symbol.decode('utf-8')
+	symbol=conn.hget(redis_key,"symbol")
+	symbol=symbol.decode('utf-8')
+	units=conn.hget(redis_key,"units")
+	units=units.decode('utf-8')
+	trade_from=conn.hget(redis_key,"trade_from")
+	trade_from=trade_from.decode('utf-8')
+	trade_to=conn.hget(redis_key,"trade_to")
+	trade_to=trade_to.decode('utf-8')
+	buy_pos=conn.hget(redis_key,"buy_pos")
+	buy_pos=buy_pos.decode('utf-8')
+	sell_pos=conn.hget(redis_key,"sell_pos")
+	sell_pos=sell_pos.decode('utf-8')
+	stoploss_percent=conn.hget(redis_key,"stoploss_percent")
+	stoploss_percent=stoploss_percent.decode('utf-8')
+	safeguard_percent=conn.hget(redis_key,"safeguard_percent")
+	safeguard_percent=safeguard_percent.decode('utf-8')
+	use_stoploss=conn.hget(redis_key,"use_stoploss")
+	use_stoploss=use_stoploss.decode('utf-8')
+	candle_size=conn.hget(redis_key,"candle_size")
+	candle_size=candle_size.decode('utf-8')
+	rsi_buy=conn.hget(redis_key,"rsi_buy")
+	rsi_buy=rsi_buy.decode('utf-8')
+	rsi_sell=conn.hget(redis_key,"rsi_sell")
+	rsi_sell=rsi_sell.decode('utf-8')
+	live=conn.hget(redis_key,"live")
+	live=live.decode('utf-8')
 
 	key=str(symbol)+'-ORIGINAL-SL'	
 	mc.set(key,stoploss_per,864000)
