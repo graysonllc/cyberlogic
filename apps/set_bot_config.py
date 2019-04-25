@@ -42,7 +42,7 @@ bot_config = {"exchange":str(args.exchange),
 "rsi_sell":float(args.rsi_sell),
 "live":float(args.live)}
 
-redis_key="bconfig-".str(symbol)
+redis_key="bconfig-".symbol
 conn.hmset(redis_key, bot_config)
 bot_config_readback=conn.hgetall(redis_key)
 
