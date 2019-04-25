@@ -25,7 +25,7 @@ parser.add_argument('--live', help='1 for Live trading, 0 for dry testing.')
 args = parser.parse_args()
 
 #python3.6 redis-testing.py --exchange "Binance" --rsi_symbol='BTCUSDT' --trading_pair='BTC/USDT' --units '0.001' --trade_from 'BTC' --trade_to 'USDT' --buy_position '1' --sell_position '1' --use_stoploss '1' --candle_size '5m' --safeguard_percent '2' --stoploss_percent '1' --rsi_buy '20' --rsi_sell '80' --live '1'
-{'exchange': 'Binance', 'rsi_symbol': 'BTCUSDT', 'symbol': 'BTC/USDT', 'units': 0.001, 'trade_from': 'BTC', 'trade_to': 'USDT', 'buy_pos': 1, 'sell_position': 1, 'stoploss_percent': 1.0, 'use_stoploss': 1, 'candle_size': '5m', 'safeguard_percent': 2.0, 'rsi_buy': 20.0, 'rsi_sell': 80.0, 'live': 1.0}
+#{'exchange': 'Binance', 'rsi_symbol': 'BTCUSDT', 'symbol': 'BTC/USDT', 'units': 0.001, 'trade_from': 'BTC', 'trade_to': 'USDT', 'buy_pos': 1, 'sell_position': 1, 'stoploss_percent': 1.0, 'use_stoploss': 1, 'candle_size': '5m', 'safeguard_percent': 2.0, 'rsi_buy': 20.0, 'rsi_sell': 80.0, 'live': 1.0}
 
 bot_config = {"exchange":str(args.exchange),
 "rsi_symbol":str(args.rsi_symbol), 
@@ -43,14 +43,9 @@ bot_config = {"exchange":str(args.exchange),
 "rsi_sell":float(args.rsi_sell),
 "live":float(args.live)}
 
-print(bot_config)
-sys.exit("die")
-
 conn.hmset("bconfig", bot_config)
 
 bot_config_readback=conn.hgetall("bconfig")
-
-print(conn.hget("bconfig","exchange"))
 
 trading_on=conn.hget("bconfig","exchange")
 trading_on=trading_on.decode('utf-8')
