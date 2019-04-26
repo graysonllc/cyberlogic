@@ -15,6 +15,7 @@ import ccxt
 import redis
 from datetime import datetime
 import configparser
+import subprocess
 
 config = configparser.ConfigParser()
 config.read('/root/akeys/b.conf')
@@ -553,6 +554,30 @@ def delete_bot(bot, update, args):
 	r.hdel(redis_key,'*')
 	bot.send_message(chat_id=update.message.chat_id, text=ret)
 
+def spawn_bot(symbol):
+	config = configparser.ConfigParser()
+	config.add_section('circus')
+	config.set('circus', 'check_delay', '5')
+	config.set('circus', 'endpoint','tcp://127.0.0.1:5555')
+
+	bfn=str(symbol.lower())+'.ini'
+	bfn=bfn.replace("/", "-")
+	
+	bot_name='watcher:'+str(symbol)
+	bot_file='/home/crypto/cryptologic/pid-configs/'+str(bfn)
+	args='--trading_pair '+str(symbol)
+	config.add_section(bot_name)
+	config.set(bot_name, 'cmd', '/usr/bin/python3.6 /home/crypto/cryptologic/bots/autotrader.py')
+	config.set(bot_name, 'args', args)
+	config.set(bot_name, 'warmup_delay', '0')
+	config.set(bot_name, 'numprocesses', '1')
+
+	with open(bot_file, 'w') as configfile:
+		config.write(configfile)
+		print("Write Config File to: "+str(bot_file))
+		print("Wrote: "+str(configfile))
+		subprocess.run(["/usr/bin/circusd", "--daemon",bot_file])
+
 def add_bot(bot, update, args):
 
 	r = redis.Redis(host='localhost', port=6379, db=0)
@@ -621,6 +646,7 @@ def add_bot(bot, update, args):
 		ret=ret+"\n::Live Trading Enabled: "+live
 		ret=ret+"\n::TA Candle Size: "+candle_size
 		ret=ret+"\n\nIf you ever want to kill it issue /deletebot "+str(symbol)
+		spawn_bot(symbol)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)	
 
 	else:
