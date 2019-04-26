@@ -12,6 +12,9 @@ import time
 import requests
 import redis
 import configparser
+from datetime import datetime
+
+r = redis.Redis(host='localhost', port=6379, db=0)
 
 config = configparser.ConfigParser()
 
@@ -22,7 +25,21 @@ sys.path.append(root + '/python')
 import talib
 import numpy as np
 import ccxt  # noqa: E402
-	
+
+def log_redis(redis_key,message,c):
+
+	if c>10000:
+		print(r.lpop(redis_key))
+		
+	now = datetime.now()
+	ts = datetime.timestamp(now)
+	running=datetime.fromtimestamp(ts).strftime("%Y-%m-%d %I:%M:%S")
+
+	message=str(running)+"\t"+str(message)
+	print("Writing to redis: "+str(redis_key))
+	print(message)
+	r.rpush(redis_key,message)
+
 def get_exchange():
 	
 	#Read in our apikeys and accounts
@@ -37,7 +54,7 @@ def get_exchange():
     'apiKey': binance_api_key,
     'secret': binance_api_secret,
     'enableRateLimit': True,
-    'rateLimit': 3600,
+    'rateLimit': 1200,
     'verbose': False,  # switch it to False if you don't want the HTTP log
 	})
 	return(exchange)
@@ -109,10 +126,7 @@ def get_rsi(pair,interval):
 			if chkput>0:
 				fin.append(chkput)
 		
-		#sys.exit("fuck")
 		rsi=float(fin[-1])
-
-		#rsi=round(rsi)
 
 		return(rsi)
 	except:
@@ -131,10 +145,9 @@ def get_rsi_old(pair,interval):
 			close_price=float(trade[5])
 			high_price=float(trade[3])
 			low_price=float(trade[4])
-			#if close_price>0:
-			arr.append(close_price)
+			if close_price>0:
+				arr.append(close_price)
 			
-
 		np_arr = np.array(arr,dtype=float)
 		output=talib.RSI(np_arr,timeperiod=14)
 		for chkput in output:
@@ -142,7 +155,6 @@ def get_rsi_old(pair,interval):
 			fin.append(chkput)
 		
 		rsi=float(fin[-1])
-
 		rsi=round(rsi)
 		return(rsi)
 	except:
@@ -159,16 +171,17 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 		asks=ret['asks']
 		return asks
 		
-def main(exchange,symbol):
+def main(exchange,symbol,c):
 	
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
 	conn = redis.Redis('127.0.0.1')
-	
 
+	redis_log="LOG-"+symbol
+	redis_trade_log="TRADELOG-"+symbol
 	redis_key="bconfig-"+symbol
-	print(redis_key)
-	print(conn.hgetall(redis_key))	
+	redis_rsi_log="RSILOG-"+symbol
+	
 	trading_on=conn.hget(redis_key,"trading_on")
 	trading_on=trading_on.decode('utf-8')
 	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
@@ -207,20 +220,12 @@ def main(exchange,symbol):
 	use_stoploss=int(use_stoploss)
 	units=float(units)
 	
-	print("Exchange: "+trading_on)
-	print("Trade Pair: "+symbol)
-	print("Units: "+str(units))
-	print("Buy Book Scrape Position: "+str(buy_pos))
-	print("Sell Book Scrape Position: "+str(sell_pos))
-	print("RSI Buy: "+str(rsi_buy))
-	print("RSI Sell: "+str(rsi_sell))
-	print("Stoploss Percent: "+str(stoploss_percent))
-	print("Safeguard Percent: "+str(safeguard_percent))
-	print("Candle Size: "+candle_size)
-	print("Stoploss Enabled: "+str(use_stoploss))
-	print("Live Trading Enabled: "+live)
-	print("TA Candle Size: "+candle_size)
+	message="Exchange: "+trading_on+"\tExchange: "+trading_on+"\tTrade Pair: "+str(symbol)+"\tUnits: "+str(units)+"\tBuy Book Scrape Position: "+str(buy_pos)+"\tSell Book Scrape Position: "+str(sell_pos)+"\tRSI Buy: "+str(rsi_buy)+"\tRSI Sell: "+str(rsi_sell)+"\tStoploss Percent: "+str(stoploss_percent)+"\tSafeguard Percent: "+str(safeguard_percent)+"\tCandle Size: "+candle_size+"\tStoploss Enabled: "+str(use_stoploss)+"\tLive Trading Enabled: "+live
 
+	if c==0:
+		log_redis(redis_log,message,c)
+		print(message)
+		
 	key=str(symbol)+'-ORIGINAL-SL'	
 	mc.set(key,stoploss_percent,864000)
 	ignore_rsi=0
@@ -229,7 +234,7 @@ def main(exchange,symbol):
 	#If the manual bot is doing sell off then dont interfere
 	key=str(symbol)+'-PAUSED'	
 	if(mc.get(key)):
-		time.sleep(30)
+		#time.sleep(30)
 		return(1)
 	
 	key=str(symbol)+'-SL'	
@@ -265,9 +270,16 @@ def main(exchange,symbol):
 	high=float(ticker['high'])
 	low=float(ticker['low'])
 	
-	last_array=fetch_last_order(exchange,symbol)
-	last_price=float(last_array['price'])
-	last_type=last_array['side']
+	lo_key="last_order-"+str(symbol)
+	print(lo_key)
+	if mc.get(lo_key):
+		last_array=mc.get(lo_key)
+	else:
+		last_array=fetch_last_order(exchange,symbol)
+		last_price=float(last_array['price'])
+		last_type=last_array['side']
+		print(last_array)
+		mc.set(key,1,60)			
 
 	if last_type=='BUY':
 		trade_action='selling'
@@ -285,9 +297,16 @@ def main(exchange,symbol):
 				open_fee=order['fee']
 				order_id=order['info']['orderId']
 				
-				print("Theres an open order\nType: " +str(open_type)+ "\nPrice: "+str(open_price)+ "\nFilled: "+str(open_filled)+"/"+str(open_remaining)+"\nRSI is: "+str(rsi)+" Order ID: "+str(order_id))
-				print("Current Ticker Values- Last: "+str(last)+" Bid: "+str(bid)+" Ask: "+str(ask))
-	
+				message="Theres an open order\nType: " +str(open_type)+ "\nPrice: "+str(open_price)+ "\nFilled: "+str(open_filled)+"/"+str(open_remaining)+"\nRSI is: "+str(rsi)+" Order ID: "+str(order_id)
+								
+				log_redis(redis_log,message,c)
+				print(message)
+
+				message="Current Ticker Values- Last: "+str(last)+" Bid: "+str(bid)+" Ask: "+str(ask)
+
+				log_redis(redis_log,message,c)
+				print(message)
+
 		if use_stoploss==1:
 			
 				try:
@@ -306,9 +325,10 @@ def main(exchange,symbol):
 							#sell_price=float(last)
 							sell_price=float(book[0][0])
 
-						print("last buy price: "+str(last_price))
-						print("stoploss price: "+str(stoploss_price))
-						print("market price: "+str(last))
+						message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
+						log_redis(redis_log,message,c)
+						print(message)
+
 						if last < stoploss_price:
 
 							exchange.cancelOrder(order_id,symbol)
@@ -317,18 +337,25 @@ def main(exchange,symbol):
 							print("creating stoploss order: "+str(sell_price))
 							message="Alert Stoploss Hit line 260, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
 							broadcast(message)
+							print(message)
+							log_redis(redis_trade_log,message,c)
+							
 							if live=="yes":
 								ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
-							message="killing script never buy back here for :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
-							broadcast(message)	
+						
+							broadcast(message)
+							message="Killing Bot"
+							log_redis(redis_trade_log,message,c)
 							return("kill")				
 							key=str(symbol)+'-SL'	
 							mc.set(key,1,86400)			
 				except:
 					print("Some Error\n")
 	else:
-		print("\nNo open orders Currently RSI: "+str(rsi))	
-		
+		message="No open orders Currently RSI: "+str(rsi)	
+		log_redis(redis_log,message,c)
+		print(message)
+
 		try:
 			last_array=fetch_last_order(exchange,symbol)
 			last_price=float(last_array['price'])
@@ -342,55 +369,44 @@ def main(exchange,symbol):
 			print(last_price)
 					
 		if ticker:
-		
-			config = configparser.ConfigParser()
-			config.read('/root/akeys/b.conf')
-			mysql_username=config['mysql']['MYSQL_USERNAME']
-			mysql_password=config['mysql']['MYSQL_PASSWORD']
-			mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
-			mysql_database=config['mysql']['MYSQL_DATABASE']
-			telegram_id=config['binance']['TELEGRAM_ID']
-
-			db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
-
-			cursor = db.cursor()
-	
-			sql = """
-			INSERT INTO rsi_history(pair,bid,ask,last,high,low,rsi,timestamp,datetime)
-			VALUES (%s,%s,%s,%s,%s,%s,%s,now(),now())
-			"""
-			cursor.execute(sql,(symbol,bid,ask,last,high,low,rsi))
-			db.close()	
+			message=str(symbol)+"\t"+str(bid)+"\t"+str(ask)+"\t"+str(last)+"\t"+str(high)+"\t"+str(low)+"\t"+str(rsi)
+			log_redis(redis_rsi_log,message,c)
 	
 		got_key=int(0)
 		key=str(symbol)+'-SYSTEM-BUYBACK'
 		if mc.get(key):
 			got_key=0
+
 		if trade_action=="buying" and rsi<=rsi_buy or trade_action=="buying" and ignore_rsi==1 or trade_action=="buying" and got_key==1:
 			
-			print(str(price)+" is over: "+str(last_price))
 			safeguard=last_price/100*safeguard_percent
 			price=last_price-safeguard
-			print("using safeguard price is now: "+str(price))
 
 			exchange_cut=price/100*0.007500
 			price=price-exchange_cut
 			print("Making buyorder for "+str(units)+" price: "+str(price)+"\n")
 			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
 			message="Making Buy Order For "+str(units)+" Price: "+str(price)+" Last Sell Price: "+str(last_price)
+			log_redis(redis_trade_log,message,c)
+
 			broadcast(message)
 			print(ret)
-			print("\nLive Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh: "+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n")
-		
+			message="Live Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh: "+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n"
+			log_redis(redis_trade_log,message,c)
+			print(message)
 		elif trade_action=="selling" and rsi>=rsi_sell:
 			book=fetch_order_book(exchange,symbol,'asks',1)
 			price=float(book[sell_pos][0])
 		
 			if price < last_price:
-				print(str(price)+" is under: "+str(last_price))
+				message=str(price)+" is under: "+str(last_price)
+				log_redis(redis_trade_log,message,c)
+
 				safeguard=last_price/100*safeguard_percent
 				price=last_price+safeguard
-				print("using safeguard price is now: "+str(price))
+				message="Using safeguard price is now: "+str(price)
+				log_redis(redis_trade_log,message,c)
+				print(message)
 				
 			exchange_cut=price/100*0.007500
 			price=price+exchange_cut
@@ -399,10 +415,15 @@ def main(exchange,symbol):
 			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
 			message="Making Sell Order For "+str(units)+" Price: "+str(price)+" Last Buy Price: "+str(last_price)+str(add)
 			broadcast(message)
+			log_redis(redis_trade_log,message,c)
+
 			if live=="yes":
 				ret=exchange.create_order (symbol, 'limit', 'sell', units, price)
-			print(ret)
-			print("\nLive Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh: "+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n")
+				print(ret)
+			message="\nLive Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh:"+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n"
+			
+			log_redis(redis_trade_log,message,c)
+			
 		else:
 			if use_stoploss==1:
 				last_array=fetch_last_order(exchange,symbol)
@@ -432,7 +453,8 @@ def main(exchange,symbol):
 						print("creating stoploss order: "+str(sell_price))
 						message="Alert Stoploss Hit 364, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
 						broadcast(message)
-						
+						log_redis(redis_trade_log,message,c)
+
 						if live=="yes":
 							ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
 	
@@ -446,7 +468,9 @@ def main(exchange,symbol):
 						key=str(symbol)+'-SL'	
 						mc.set(key,1,86400)			
 		
-			print("The market Conditions are not right for a buy or sell rsi is: "+str(rsi))
+			message="The market Conditions are not right for a buy or sell rsi is: "+str(rsi)
+			log_redis(redis_log,message,c)
+
 		return(1)
 
 mc = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -457,13 +481,18 @@ parser.add_argument('--trading_pair', help='Trading pair i.e BTC/USDT')
 args = parser.parse_args()
 
 symbol=str(args.trading_pair)
+print(symbol)
+
+c=0
 
 while True:
 	ret="meh"
-	#try:
-	ret=main(exchange,symbol)
-	#except:
-	#	print("threw error sleeping for 3 seconds")
-	#if ret=="kill":
-	#	sys.exit("die bitch")
-	time.sleep(5)
+	
+	try:
+		ret=main(exchange,symbol,c)
+	except:
+		print("threw error sleeping for 3 seconds")
+		time.sleep(5)
+	if ret=="kill":
+		sys.exit("die bitch")
+	c+=1
