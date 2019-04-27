@@ -488,11 +488,11 @@ c=0
 while True:
 	ret="meh"
 	
-	try:
-		ret=main(exchange,symbol,c)
-	except:
-		print("threw error sleeping for 3 seconds")
-		time.sleep(5)
-	if ret=="kill":
-		sys.exit("die bitch")
+	#try:
+	ret=main(exchange,symbol,c)
+	#except:
+	#print("threw error sleeping for 3 seconds")
+	time.sleep(5)
+	#if ret=="kill":
+	#	sys.exit("die bitch")
 	c+=1

@@ -11,6 +11,7 @@ import pymysql
 import time
 import requests
 import redis
+import configparser
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'

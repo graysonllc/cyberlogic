@@ -13,16 +13,19 @@ import talib
 import numpy as np
 import ccxt
 import redis
-from datetime import datetime
+import datetime
 import configparser
 import subprocess
+import time
+import shlex
+import argparse
 
 config = configparser.ConfigParser()
 config.read('/root/akeys/b.conf')
 mysql_username=config['mysql']['MYSQL_USERNAME']
 mysql_password=config['mysql']['MYSQL_PASSWORD']
 mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
-mysql_database=config['mysql']['MYSQL_DATABASE']
+mysql_database='cmc'
 telegram_id=config['binance']['TEEGRAM_ID_EMBED']
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -69,82 +72,10 @@ def get_price(exchange,symbol):
 	return(price)
 	
 
-def get_rsi(bot, update, args):
-
-	try:
-		pair=args[0]
-		interval=args[1]
-		pair=pair.upper()
-		arr = []
-		url="https://api.binance.com/api/v1/klines?symbol="+pair+"&interval="+interval+"&limit=30"
-		r=requests.get(url)
-		res = (r.content.strip())
-		status = r.status_code
-		trades = json.loads(res.decode('utf-8'))
-		n=0
-		for trade in trades:
-			open_price=float(trade[0])
-			close_price=float(trade[4])
-			high_price=float(trade[2])
-			low_price=float(trade[3])
-			arr.append(close_price)
-			n += 1
-			
-		np_arr = np.array(arr,dtype=float)
-		output=talib.RSI(np_arr,timeperiod=14)
-		rsi=output[-1]
-		if rsi<30:
-			status='Oversold'
-		elif rsi>70:
-			status="Overbought"
-		else:
-			status='Neutral'
-		rsi=round(rsi)
-
-		ret1=("Binance RSI (Relative Strength Monitor: "+str(pair)+")\n")
-		ret2=("RSI :"+str(rsi)+"\tStatus: "+str(status)+"\n")
-		ret3=("Candlestick Timeframe: "+interval)
-		out=ret1+ret2+ret3
-		bot.send_message(chat_id=update.message.chat_id, text=out)	
-	except:
-		error_message=("Error: something went wrong syntax is /rsi PAIR interval i.e /rsi ETHUSDT INTERVAL\nValid Intervals are 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8 h, 12h, 1d, 3d, 1w, 1m")
-		error_message = str(error_message)
-		bot.send_message(chat_id=update.message.chat_id, text=error_message)	
-
-def get_articles(ftype):
-	
-	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
-	cursor = db.cursor(pymysql.cursors.DictCursor)
-	
-	sql = """SELECT datetime,user,coin,score,link from news_reviews where date>=%s and ftype=%s order by datetime desc limit 5"""
-	try:
-		from datetime import date, timedelta                   
-		yesterday = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-
-		cursor.execute(sql,(yesterday,ftype))
-		
-		data = ""
-
-		for row in cursor:
-			datetime=str(row['datetime'])
-			score=str(row['score'])
-			link=str(row['link'])
-			user=str(row['user'])
-			coin=str(row['coin'])
-			data+=datetime+"\t submitted by: "+user+"\tcoin:"+str(coin)+"\tlink: "+link+" Score: "+score+"\n"
-	
-	except:
-		# Rollback in case there is any error
-		db.rollback()
-
-		# disconnect from server
-		db.close()
-	return(data)
-
 def query_ath(name):
 
 	try:
-		db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
+		db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,'cmc')
 		cursor = db.cursor()
 		sql = """SELECT ath_date,price from aths where coin=%s"""
 		cursor.execute(sql,(name))
@@ -153,204 +84,10 @@ def query_ath(name):
 			ath_price=row[1]
 			ath_price='${:,.2f}'.format(ath_price)
 			ret="\n"+str(name)+("\nAth Date: "+str(ath_date)+ "\n"+ str(name)+" Ath Price: "+str(ath_price))
+			db.close()
 		return(ret)
 	except:
 		print("some error")
-	db.close()
-
-def get_score(ftype):
-	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)	
-	cursor = db.cursor(pymysql.cursors.DictCursor)
-	
-	sql = """
-	SELECT avg(score) as score from news_reviews where date=current_date() and ftype=%s
-	"""
-
-	try:
-		cursor.execute(sql,(ftype))
-		for row in cursor:
-			score=(row['score'])
-
-	#Commit your changes in the database
-	except:
-	# Rollback in case there is any error
-		db.rollback()
-
-	# disconnect from server
-	db.close()
-	
-	return score
-
-def fud(bot, update, args):
-	
-	try:
-		coin=args[0]
-		link=args[1]
-		score=args[2]
-		coin=coin.upper()
-	except:
-		error_message=("Error: something went wrong syntax is /fud coin link score")
-		error_message = str(error_message)
-		bot.send_message(chat_id=update.message.chat_id, text=error_message)
-		return 0
-	
-	ftype=str('fud')
-	
-	username = update.message.from_user.first_name
-	
-	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
-	cursor = db.cursor()
-
-	sql = """
-		INSERT INTO news_reviews(datetime,date,user,ftype,coin,score,link)
-		VALUES (now(),current_date(),%s,%s,%s,%s,%s)
-		"""
-
-	try:
-		cursor.execute(sql,(username,ftype,coin,score,link))
-		#Commit your changes in the database
-		db.commit()
-	except:
-		# Rollback in case there is any error
-		db.rollback()
-
-		# disconnect from server
-		db.close()
-	
-		
-	fud_score=get_score('fud')
-	fud_articles=get_articles('fud')
-	fud_message=("\nTodays fud score is: " + str(fud_score)+"\nFud Articles: \n"+fud_articles)
-
-	message = username.upper() + ": You said Fud score for " +coin.upper()+" is at Level: "+score+" Link: "+link+fud_message
-	message = str(message)
-	bot.send_message(chat_id=update.message.chat_id, text=message)
-	
-
-def fomo(bot, update, args):
-	
-	try:
-		coin=args[0]
-		coin=coin.upper()
-		link=args[1]
-		score=args[2]
-		score_int=int(score)
-	except:
-		error_message=("Error: something went wrong syntax is /fomo coin link score")
-		error_message = str(error_message)
-		bot.send_message(chat_id=update.message.chat_id, text=error_message)
-		return 0
-	
-	if score_int<1 or score_int>10:
-		error_message=("Error: score has to be between 1 and 10 syntax is /fomo coin link score")
-		error_message = str(error_message)
-		bot.send_message(chat_id=update.message.chat_id, text=error_message)
-		return 0
-	
-	try:
-		coin
-	except:
-		error_message=("Coin cant be empty syntax is /fomo coin link score")
-		error_message = str(error_message)
-		bot.send_message(chat_id=update.message.chat_id, text=error_message)
-		return 0
-	
-	ftype=str('fomo')
-	
-	username = update.message.from_user.first_name
-	
-	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysl_database)
-	cursor = db.cursor()
-
-	sql = """
-		INSERT INTO news_reviews(datetime,date,user,ftype,coin,score,link)
-		VALUES (now(),current_date(),%s,%s,%s,%s,%s)
-		"""
-
-	try:
-		cursor.execute(sql,(username,ftype,coin,score,link))
-		#Commit your changes in the database
-		db.commit()
-	except:
-		# Rollback in case there is any error
-		db.rollback()
-
-		# disconnect from server
-		db.close()
-	
-		error_message=("Error: something went wrong syntax is /fomo coin link score")
-		error_message = str(error_message)
-		bot.send_message(chat_id=update.message.chat_id, text=error_message)
-		return 0
-
-		
-	fomo_score=get_score('fomo')
-	fomo_articles=get_articles('fomo')
-	fomo_message=("\nTodays Fomo score is: " + str(fomo_score)+"\nFomo Articles: \n"+fomo_articles)
-
-	message = username.upper() + ": You said Fomo score for " +coin.upper()+" is at Level: "+score+" Link: "+link+fomo_message
-	message = str(message)
-	bot.send_message(chat_id=update.message.chat_id, text=message)
-
-def fomoscore(bot,update,args):
-	username = update.message.from_user.first_name
-
-	fomo_score=get_score('fomo')
-	fomo_articles=get_articles('fomo')
-	fomo_message=("\nTodays Fomo score is: " + str(fomo_score)+"\nFomo Articles: \n"+fomo_articles)
-
-	bot.send_message(chat_id=update.message.chat_id, text=fomo_message)
-	
-	
-def fudscore(bot,update,args):
-	username = update.message.from_user.first_name
-	fud_score=get_score('fud')
-	fud_articles=get_articles('fud')
-	fud_message=("\nTodays Fud score is: " + str(fud_score)+"\nFud Articles: \n"+fud_articles)
-
-	bot.send_message(chat_id=update.message.chat_id, text=fud_message)
-
-def is_moon():
-	try:
-		url = 'https://api.coinmarketcap.com/v2/ticker/'
-		r=requests.get(url)
-		res = (r.content.strip())
-		status = r.status_code
-		data = json.loads(res.decode('utf-8'))
-	
-		plus_1h=int(0)
-		plus_24h=int(0)
-		plus_7d=int(0)
-	
-		rows=data['data']
-		for row in rows:
-			row_data=rows[row]["quotes"]["USD"]
-			#print(row_data)
-			p_1h=row_data['percent_change_1h']
-			p_24h=row_data["percent_change_24h"]
-			p_7d=row_data["percent_change_7d"]
-			if p_1h > 5:
-				plus_1h += 1
-			if p_24h > 0:
-				plus_24h += 1
-			if p_7d > 0:
-				plus_7d += 1
-		
-		minus_1h = int(100) - plus_1h
-		minus_24h = int(100) - plus_24h
-		minus_7d = int(100) - plus_7d
-
-		
-		try:
-			ath=query_ath(name)
-		except:
-			ath=""
-			
-		ret=("Market Health For Top 100\n1 Hr Green: "+str(plus_1h)+"% Red: "+str(minus_1h)+ "%\n24 Hr Green: "+str(plus_24h)+"% Red: "+str(minus_24h)+ "%\n7 Day Green: "+str(plus_7d)+"% Red: "+str(minus_7d)+ "%"+str(ath)) 
-	except:
-		print("some error")
-	return(ret)
-
 
 def market_health():
 	try:
@@ -473,6 +210,8 @@ def get_ticker(ucoin):
 				ath=query_ath(coin_n)
 				if not ath:
 					ath=""
+				else:
+					print(ath)
 
 				ret=str(ticker.upper()) +" #"+str(rank)+"\nPrice: $"+str(price_usd)+" BTC: "+str(price_btc)+"\n1hr ("+change_1h+ "%) 24hr("	+change_24h+ "%) 7D("	+change_7d+ "%)""\nMarket Cap "+str(market_cap)+ "\nMax Supply: "+str(total_supply)+"\nCirculating Supply: "+str(circulating+str(ath))
 
@@ -483,11 +222,11 @@ def get_ticker(ucoin):
 		return(ret)
 
 def start(bot, update):
-	help="I am T800, i can do the following commands:\n\n/market to get global market data, and market health!\n/ticker SYMBOL to get coin Ticker and ATH\n/fomo coinname  link score to report a fomo article and score it\n/fud coinname link score to report a fud article and score it\n/fomoscore to see todays fomo score and articles\n/fudscore to see todays fud score and articles\n/rsi ETHUSDT INTERVAL (Valid Intervals are 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8 h, 12h, 1d, 3d, 1w, 1m)\nThis is binance RSI Only, replace ETHUSDT with the pair u want";
+	help="I am T800, i can do the following commands:\n\n/market to get global market data, and market health!\n/ticker SYMBOL to get coin Ticker and ATH\n";
 	bot.send_message(chat_id=update.message.chat_id, text=help)
 	
 def help(bot, update):
-	help="I am T800, i can do the following commands:\n\n/market to get global market data, and market health!\n/ticker SYMBOL to get coin Ticker and ATH\n/fomo coinname  link score to report a fomo article and score it\n/fud coinname link score to report a fud article and score it\n/fomoscore to see todays fomo score and articles\n/fudscore to see todays fud score and articles\n/rsi ETHUSDT INTERVAL (Valid Intervals are 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8 h, 12h, 1d, 3d, 1w, 1m)\nThis is binance RSI only, replace ETHUSDT with the pair u want";
+	help="I am T800, i can do the following commands:\n\n/market to get global market data, and market health!\n/ticker SYMBOL to get coin Ticker and ATH\n";
 
 	bot.send_message(chat_id=update.message.chat_id, text=help)
 
@@ -555,16 +294,14 @@ def delete_bot(bot, update, args):
 	bot.send_message(chat_id=update.message.chat_id, text=ret)
 
 def spawn_bot(symbol):
+	
 	config = configparser.ConfigParser()
-	config.add_section('circus')
-	config.set('circus', 'check_delay', '5')
-	config.set('circus', 'endpoint','tcp://127.0.0.1:5555')
-
+	
 	bfn=str(symbol.lower())+'.ini'
 	bfn=bfn.replace("/", "-")
 	
 	bot_name='watcher:'+str(symbol)
-	bot_file='/home/crypto/cryptologic/pid-configs/'+str(bfn)
+	bot_file='/home/crypto/cryptologic/pid-configs/init.ini'
 	args='--trading_pair '+str(symbol)
 	config.add_section(bot_name)
 	config.set(bot_name, 'cmd', '/usr/bin/python3.6 /home/crypto/cryptologic/bots/autotrader.py')
@@ -572,11 +309,12 @@ def spawn_bot(symbol):
 	config.set(bot_name, 'warmup_delay', '0')
 	config.set(bot_name, 'numprocesses', '1')
 
-	with open(bot_file, 'w') as configfile:
+	with open(bot_file, 'a+') as configfile:
 		config.write(configfile)
 		print("Write Config File to: "+str(bot_file))
 		print("Wrote: "+str(configfile))
-		subprocess.run(["/usr/bin/circusd", "--daemon",bot_file])
+	subprocess.run(["/usr/bin/circusd", "--daemon",bot_file])
+	subprocess.run(["/usr/bin/circusctl", "restart"])
 
 def add_bot(bot, update, args):
 
@@ -619,14 +357,20 @@ def add_bot(bot, update, args):
 		rsi_sell=rsi_sell.decode('utf-8')
 		live=conn.hget(redis_key,"live")
 		live=live.decode('utf-8')
+		instant_market_buy=conn.hget(redis_key,"instant_market_buy")
+		instant_market_buy=int(instant_market_buy.decode('utf-8'))
 		bot_name=symbol
 		
 		r.sadd("botlist", bot_name)
-		now = datetime.now()
-		timestamp = datetime.timestamp(now)
+		timestamp=time.time()
+
 		r.set(symbol,timestamp)
-		running=datetime.fromtimestamp(timestamp).strftime("%A, %B %d, %Y %I:%M:%S")
-	
+		running=datetime.datetime.fromtimestamp(timestamp).strftime("%A, %B %d, %Y %I:%M:%S")
+
+		timestamp=time.time()
+		ts_raw=timestamp
+		running=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+			
 		redis_key="bconfig-"+symbol
 		
 		conn.hmset(redis_key, all)
@@ -645,33 +389,67 @@ def add_bot(bot, update, args):
 		ret=ret+"\n::Stoploss Enabled: "+str(use_stoploss)
 		ret=ret+"\n::Live Trading Enabled: "+live
 		ret=ret+"\n::TA Candle Size: "+candle_size
+		ret=ret+"\n::Instant Market Buy: "+str(instant_market_buy)
+
 		ret=ret+"\n\nIf you ever want to kill it issue /deletebot "+str(symbol)
+
+		if instant_market_buy==1:
+			exchange=get_exchange()
+			ret=exchange.create_order (symbol, 'MARKET', 'BUY', units)
+			print(ret)
 		spawn_bot(symbol)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)	
 
 	else:
-		
-		trading_on=args[0]
-		rsi_symbol=args[1]
-		trading_pair=args[2]
-		units=args[3]
-		trade_from=args[4]
-		trade_to=args[5]
-		buy_pos=args[6]
-		sell_pos=args[7]
-		stoploss_percent=args[8]
-		use_stoploss=args[9]
-		candle_size=args[10]
-		safeguard_percent=args[11]
-		rsi_buy=args[12]
-		rsi_sell=args[13]
-		live=args[14]
-		bot_name=trading_pair
+		argstr=' '.join(args[0:])
+		print(argstr)
+		parser = argparse.ArgumentParser()
+				
+		parser.add_argument('--trading_on', help='Exchange name i.e binance')
+		parser.add_argument('--rsi_symbol', help='RSI SYMBOL pair i.e IOTAUSDT')
+		parser.add_argument('--trading_pair', help='Trading pair i.e BTC/USDT')
+		parser.add_argument('--units', help='Number of coins to trade')
+		parser.add_argument('--trade_from', help='I.E BTC')
+		parser.add_argument('--trade_to', help='I.E USDT')
+		parser.add_argument('--buy_pos', help='Buy book position to clone')
+		parser.add_argument('--sell_pos', help='Sell book position to clone')
+		parser.add_argument('--use_stoploss', help='1 to enable, 0 to disable')
+		parser.add_argument('--candle_size', help='i.e 5m for 5 minutes')
+		parser.add_argument('--safeguard_percent', help='safeguard percent if buying back cheaper')
+		parser.add_argument('--stoploss_percent', help='stoploss percent')
+		parser.add_argument('--rsi_buy', help='Rsi Number under to trigger a buy, i.e 20')
+		parser.add_argument('--rsi_sell', help='Rsi Number over to trigger a sell, i.e 80')
+		parser.add_argument('--live', help='1 for Live trading, 0 for dry testing.')
+		parser.add_argument('--instant_market_buy', help='To make the first buy instant @ market price')
+
+		print(argstr)
+		pargs = parser.parse_args(shlex.split(argstr))
+		print(pargs)
+
+		trading_on=str(pargs.trading_on)
+		rsi_symbol=str(pargs.rsi_symbol)
+		trading_pair=str(pargs.trading_pair)
+		units=float(pargs.units)
+		trade_from=str(pargs.trade_from)
+		trade_to=str(pargs.trade_to)
+		buy_pos=int(pargs.buy_pos)
+		sell_pos=int(pargs.sell_pos)
+		stoploss_percent=float(pargs.stoploss_percent)
+		use_stoploss=int(pargs.use_stoploss)
+		candle_size=str(pargs.candle_size)
+		safeguard_percent=float(pargs.safeguard_percent)
+		rsi_buy=float(pargs.rsi_buy)
+		rsi_sell=float(pargs.rsi_sell)
+		live=str(pargs.live)
+		bot_name=str(trading_pair)
+		instant_market_buy=int(pargs.instant_market_buy)
+
 		symbol=bot_name
 		if r.sismember("botlist", trading_pair):
 			ts=float(r.get(bot_name).decode('utf-8'))
 			print(ts)
-			running=datetime.fromtimestamp(ts).strftime("%A, %B %d, %Y %I:%M:%S")
+			running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %I:%M:%S")
+
 			txt="we allready have a bot running called: "+str(bot_name)+" Its been Running since: "+str(running)
 			bot.send_message(chat_id=update.message.chat_id, text=txt)	
 		else:	
@@ -688,6 +466,7 @@ def add_bot(bot, update, args):
 			ret=ret+"\n::Candle Size: "+candle_size
 			ret=ret+"\n::Stoploss Enabled: "+str(use_stoploss)
 			ret=ret+"\n::Live Trading Enabled: "+live
+			ret=ret+"\n::Instant Market Buy: "+str(instant_market_buy)
 			ret=ret+"\n::TA Candle Size: "+candle_size
 			ret=ret+"\n\nIf you have reviewed all settings carefully reply with /addbot confirm to execute!"
 
@@ -705,6 +484,7 @@ def add_bot(bot, update, args):
 			"safeguard_percent":float(safeguard_percent),
 			"rsi_buy":float(rsi_buy),
 			"rsi_sell":float(rsi_sell),
+			"instant_market_buy":int(instant_market_buy),
 			"live":str(live)}
 			
 			print(bot_config)
@@ -713,6 +493,41 @@ def add_bot(bot, update, args):
 			redis_key="bconfig-tmp"
 			conn.hmset(redis_key, bot_config)
 			bot.send_message(chat_id=update.message.chat_id, text=ret)
+
+def alerts(bot,update,args):
+	r = redis.Redis(host='localhost', port=6379, db=0)
+	timestamp=time.time()
+	ts_raw=timestamp
+	date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+	date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+
+	pump_key=str(date_today+"-ALERTLIST")
+	pump_coins=r.smembers(pump_key)
+
+	for coin in pump_coins:
+		coin=coin.decode('utf-8')
+		r.sort(coin+'-IDS')
+		coin_ids=r.smembers(coin+'-IDS')
+		message=":: Alerts For: "+str(coin)
+		c=0
+		for cid in coin_ids:
+			cid=cid.decode('utf-8')
+			#print(cid)
+			rkey=str(coin)+'-'+str(cid)
+			coin_hash=r.hgetall(rkey)
+			if coin_hash:
+				date_time=r.hget(rkey,"date_time").decode('utf-8')
+				price=r.hget(rkey,"price").decode('utf-8')
+				percent=r.hget(rkey,"percent").decode('utf-8')
+				spread=r.hget(rkey,"spread").decode('utf-8')
+				high=r.hget(rkey,"high").decode('utf-8')
+				low=r.hget(rkey,"low").decode('utf-8')
+				btc_price=r.hget(rkey,"btc_price").decode('utf-8')
+				btc_percent=r.hget(rkey,"btc_percent").decode('utf-8')
+				message=message+"\n"+str(date_time)+"\tPrice: "+str(price)+' Change %:'+str(percent)+" Spread: "+str(spread)
+				c+=1
+		if c>0:
+			bot.send_message(chat_id=update.message.chat_id, text=message)
 	
 def list_bots(bot, update, args):
 	#args[0]="twat"
@@ -838,7 +653,6 @@ def price(bot, update,args):
 		percent=round(percent,2)
 		profit=round(profit,2)
 
-
 		message=str(symbol)+" Price: "+str(price)+" Last Price: "+str(last_price)+" Units: "+str(units)+" Profit: "+str(profit)+' ('+str(percent)+'%)'
 		bot.send_message(chat_id=update.message.chat_id, text=message)
 
@@ -848,35 +662,26 @@ help_handler = CommandHandler('help', help)
 ticker_handler = CommandHandler('ticker', ticker,pass_args=True)
 p_handler = CommandHandler('p', ticker,pass_args=True)
 market_handler = CommandHandler('market', market)
-news_handler = CommandHandler('news', news)
-fud_handler = CommandHandler('fud', fud,pass_args=True)
-fomo_handler = CommandHandler('fomo', fomo,pass_args=True)
-fomoscore_handler = CommandHandler('fomoscore', fomoscore,pass_args=True)
-fudscore_handler = CommandHandler('fudscore', fudscore,pass_args=True)
-rsi_handler = CommandHandler('rsi', get_rsi,pass_args=True)
 sell_handler=CommandHandler('sell', sell,pass_args=True)
 price_handler=CommandHandler('price', price,pass_args=True)
 stoploss_handler=CommandHandler('stoploss', stoploss,pass_args=True)
 list_bots_handler=CommandHandler('listbots', list_bots,pass_args=True)
 add_bot_handler=CommandHandler('addbot', add_bot,pass_args=True)
 delete_bot_handler=CommandHandler('deletebot', delete_bot,pass_args=True)
+alerts_handler=CommandHandler('alerts', alerts,pass_args=True)
 
 dispatcher.add_handler(delete_bot_handler)
 dispatcher.add_handler(add_bot_handler)
-dispatcher.add_handler(rsi_handler)
 dispatcher.add_handler(start_handler)
 dispatcher.add_handler(stoploss_handler)
 dispatcher.add_handler(list_bots_handler)
 dispatcher.add_handler(ticker_handler)
 dispatcher.add_handler(market_handler)
 dispatcher.add_handler(help_handler)
-dispatcher.add_handler(news_handler)
-dispatcher.add_handler(fud_handler)
-dispatcher.add_handler(fomo_handler)
-dispatcher.add_handler(fudscore_handler)
-dispatcher.add_handler(fomoscore_handler)
 dispatcher.add_handler(sell_handler)
 dispatcher.add_handler(price_handler)
 dispatcher.add_handler(p_handler)
+dispatcher.add_handler(alerts_handler)
+
 
 updater.start_polling()
