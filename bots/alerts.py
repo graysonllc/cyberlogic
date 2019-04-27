@@ -11,9 +11,9 @@ import pymysql
 import time
 import requests
 import re
-from datetime import date
 import configparser
-
+import datetime
+import redis
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
 sys.path.append(root + '/python')
@@ -21,6 +21,8 @@ sys.path.append(root + '/python')
 import talib
 import numpy as np
 import ccxt  # noqa: E402
+
+redis_server = redis.Redis(host='localhost', port=6379, db=0)
 
 def get_exchange():
 	
@@ -56,25 +58,6 @@ def broadcast(chatid,text):
 	print(r)
 	html = r.content
 
-def style(s, style):
-    return style + s + '\033[0m'
-
-
-def green(s):
-    return style(s, '\033[92m')
-
-
-def blue(s):
-    return style(s, '\033[94m')
-
-
-def yellow(s):
-    return style(s, '\033[93m')
-
-
-def dump(*args):
-    print(' '.join([str(arg) for arg in args]))
-    
 def fetch_prices(exchange, symbol):
 	ticker = exchange.fetch_ticker(symbol.upper())
 	return(ticker)
@@ -401,6 +384,7 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 
 def main():
 	
+	from datetime import date
 	tickers=exchange.fetchTickers()
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 	for coin in tickers:
@@ -426,6 +410,10 @@ def main():
 		elif 'BTC' in symbol:
 			min_vol=500
 			skip=0
+		elif 'BNB' in symbol:
+			min_vol=50000
+			
+			skip=0
 		if mc.get(key):
 			last_price=mc.get(key)
 			
@@ -437,7 +425,7 @@ def main():
 		low=row['low']
 		high=row['high']
 		qv=row['quoteVolume']
-			
+		price=close
 		if skip!=1:
 		
 			mc.set(key,close,86400)
@@ -454,8 +442,7 @@ def main():
 					pair=symbol
 
 					if percent>1 and percent<2:
-						key = str(date.today())+str('DDdadda2new')+str(csymbol)
-						mc.delete(key)
+						key = str(date.today())+str('newkey-sd1dddddasssasdspddsajja')+str(csymbol)
 						if mc.get(key):
 							print("seen p1-key")
 						else:
@@ -465,7 +452,7 @@ def main():
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
 							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
-
+							spread=pdiff
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -539,6 +526,55 @@ def main():
 							
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -549,9 +585,10 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+							
 					if percent>2 and percent<3:
 						key = str(date.today())+str('DD3')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -633,6 +670,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -643,10 +729,10 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
 					
 					if percent>3 and percent<4:
 						key = str(date.today())+str('DD4')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -729,6 +815,55 @@ def main():
 							
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -739,9 +874,10 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 					if percent>4 and percent<5:
 						key = str(date.today())+str('ddd4')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -823,6 +959,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -833,11 +1018,12 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 							
 					elif percent>5 and percent<6:
 					
 						key = str(date.today())+str('djdhdhjjdh')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -920,6 +1106,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -930,9 +1165,10 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 					elif percent>6 and percent<7:
 						key = str(date.today())+str('dddiduiiudyud')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -1015,6 +1251,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1025,9 +1310,10 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 					elif percent>7 and percent<8:
 						key = str(date.today())+str('djdhdhdddjjdh')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -1110,6 +1396,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1120,10 +1455,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>8 and percent<9:
 						key = str(date.today())+str('djdhdhssjjdh')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1208,6 +1544,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1218,10 +1603,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>9 and percent<10:
 						key = str(date.today())+str('DALEdjdjjdjdRT3')+str(csymbol)
-						mc.delete(key)
 						if mc.get(key):
 							print("")
 						else:
@@ -1305,6 +1691,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1315,10 +1750,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>10 and percent<11:
 						key = str(date.today())+str('DALEddjdjjdjdRT3')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1403,6 +1839,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1413,10 +1898,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 					elif percent>11 and percent<12:
 						key = str(date.today())+str('dddihsjkhhkjddhkj')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1500,6 +1986,55 @@ def main():
 													
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1510,10 +2045,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 					elif percent>12 and percent<13:
 						key = str(date.today())+str('DALEdjddddjjdjdRT3')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1598,6 +2134,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1608,10 +2193,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>13 and percent<14:
 						key = str(date.today())+str('ddkdkkhjdkj33')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1695,6 +2281,55 @@ def main():
 							
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1705,10 +2340,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 					elif percent>14 and percent<15:
 						key = str(date.today())+str('dkdhjkdhkjdkjh333d')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1791,6 +2427,55 @@ def main():
 							
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1801,10 +2486,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>16 and percent<17:
 						key = str(date.today())+str('adhjkhdjhjhkj')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1888,6 +2574,55 @@ def main():
 													
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1898,10 +2633,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 					elif percent>15 and percent<16:
 						key = str(date.today())+str('dkdjkdkh234')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -1987,6 +2723,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -1997,10 +2782,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 					elif percent>16 and percent<17:
 						key = str(date.today())+str('djdjhg3ujdhd')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2085,6 +2871,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2095,10 +2930,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 					elif percent>17 and percent<18:
 						key = str(date.today())+str('djdjhg3uddn39jdhd')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2181,6 +3017,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2191,10 +3076,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>17 and percent<18:
 						key = str(date.today())+str('djdhdhh33')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2278,6 +3164,55 @@ def main():
 													
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2288,10 +3223,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>18 and percent<19:
 						key = str(date.today())+str('djdh8838383dhh33')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2376,6 +3312,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2386,11 +3371,12 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 	
 
 					elif percent>18 and percent<19:
 						key = str(date.today())+str('djd383838hdhh33')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2473,6 +3459,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2483,10 +3518,11 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 
 					elif percent>19 and percent<20:
 						key = str(date.today())+str('djd383dddd838hdhh33')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2569,6 +3605,55 @@ def main():
 														
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2579,10 +3664,10 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
-	
+							broadcast('429640253',data)
+
 					elif percent>20:
 						key = str(date.today())+str('m0000ned')+str(csymbol)
-						mc.delete(key)
 
 						if mc.get(key):
 							print("")
@@ -2664,6 +3749,55 @@ def main():
 												
 							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							
+							timestamp=time.time()
+							ts_raw=timestamp
+							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+							date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+							alert_key_all=str(date_today)+'-ALERTS'
+							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+							alert_list_today=str(date_today)+'-ALERTLIST'
+							symbol_ids=str(symbol)+'-IDS'
+							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+							#Push the whole Alert to redis
+							redis_server.rpush(alert_key_all,data)
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+							
+							#Add Unique Coin to Alerts list for today
+							redis_server.sadd(alert_list_today,symbol)
+
+							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+							redis_server.sadd(symbol_ids,ts_raw)
+							
+							detail_hash = {"date":str(date),
+							"date_time":str(date_time), 
+							"symbol":str(symbol), 
+							"alert_type":str(alert_type), 
+							"price":float(price), 
+							"percent":float(percent), 
+							"high":str(high), 
+							"low":str(low), 
+							"volume":int(qv),
+							"spread":float(spread),
+							"rsi_3mins":float(rsi_3m),
+							"rsi_5mins":float(rsi_5m),
+							"btc_price":str(btc_price),
+							"btc_percent":str(btc_percent),
+							"link":str(link),
+							}
+		
+							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+							print(detail_hash)
+							redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+							print("Pushing coin to todays alert list: "+str(symbol))
+							print(data)
+
 							broadcast('693711905',data)	
 							broadcast('420441454',data)	
 							broadcast('446619309',data)	
@@ -2674,6 +3808,8 @@ def main():
 							broadcast('506872080',data)	
 							broadcast('543018578',data)
 							broadcast('503482955',data)
+							broadcast('429640253',data)
+
 						
 					if det==1:
 						time.sleep(3)
@@ -2684,10 +3820,59 @@ def main():
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
-								alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+								alert_type=' ::RSI ALERT 53 TO 65: '+str(percent)+'%:: '					
 							
 								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								
+								timestamp=time.time()
+								ts_raw=timestamp
+								date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+								date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+								alert_key_all=str(date_today)+'-ALERTS'
+								alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+								alert_list_today=str(date_today)+'-ALERTLIST'
+								symbol_ids=str(symbol)+'-IDS'
+								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+								#Push the whole Alert to redis
+								redis_server.rpush(alert_key_all,data)
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+							
+								#Add Unique Coin to Alerts list for today
+								redis_server.sadd(alert_list_today,symbol)
+
+								#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+								redis_server.sadd(symbol_ids,ts_raw)
+							
+								detail_hash = {"date":str(date),
+								"date_time":str(date_time), 
+								"symbol":str(symbol), 
+								"alert_type":str(alert_type), 
+								"price":float(price), 
+								"percent":float(percent), 
+								"high":str(high), 
+								"low":str(low), 
+								"volume":int(qv),
+								"spread":float(spread),
+								"rsi_3mins":float(rsi_3m),
+								"rsi_5mins":float(rsi_5m),
+								"btc_price":str(btc_price),
+								"btc_percent":str(btc_percent),
+								"link":str(link),
+								}
+		
+								print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+								print(detail_hash)
+								redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+
 								broadcast('693711905',data)	
 								broadcast('420441454',data)	
 								broadcast('446619309',data)	
@@ -2698,6 +3883,8 @@ def main():
 								broadcast('506872080',data)	
 								broadcast('543018578',data)
 								broadcast('503482955',data)
+								broadcast('429640253',data)
+
 	
 						elif rsi_3m>80:
 							key = str(date.today())+str('rsi70')+str(csymbol)
@@ -2711,6 +3898,56 @@ def main():
 							
 								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								
+								
+								timestamp=time.time()
+								ts_raw=timestamp
+								date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+								date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+								alert_key_all=str(date_today)+'-ALERTS'
+								alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+								alert_list_today=str(date_today)+'-ALERTLIST'
+								symbol_ids=str(symbol)+'-IDS'
+								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+								#Push the whole Alert to redis
+								redis_server.rpush(alert_key_all,data)
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+							
+								#Add Unique Coin to Alerts list for today
+								redis_server.sadd(alert_list_today,symbol)
+
+								#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+								redis_server.sadd(symbol_ids,ts_raw)
+							
+								detail_hash = {"date":str(date),
+								"date_time":str(date_time), 
+								"symbol":str(symbol), 
+								"alert_type":str(alert_type), 
+								"price":float(price), 
+								"percent":float(percent), 
+								"high":str(high), 
+								"low":str(low), 
+								"volume":int(qv),
+								"spread":float(spread),
+								"rsi_3mins":float(rsi_3m),
+								"rsi_5mins":float(rsi_5m),
+								"btc_price":str(btc_price),
+								"btc_percent":str(btc_percent),
+								"link":str(link),
+								}
+		
+								print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+								print(detail_hash)
+								redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+
 								broadcast('693711905',data)	
 								broadcast('420441454',data)	
 								broadcast('446619309',data)	
@@ -2721,6 +3958,8 @@ def main():
 								broadcast('506872080',data)	
 								broadcast('543018578',data)
 								broadcast('503482955',data)
+								broadcast('429640253',data)
+
 						elif rsi_3m>70 and rsi_3m<80:
 							key = str(date.today())+str('rsi70')+str(csymbol)
 							if mc.get(key):
@@ -2732,6 +3971,55 @@ def main():
 							
 								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								
+								timestamp=time.time()
+								ts_raw=timestamp
+								date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+								date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+								alert_key_all=str(date_today)+'-ALERTS'
+								alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+								alert_list_today=str(date_today)+'-ALERTLIST'
+								symbol_ids=str(symbol)+'-IDS'
+								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+								#Push the whole Alert to redis
+								redis_server.rpush(alert_key_all,data)
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+							
+								#Add Unique Coin to Alerts list for today
+								redis_server.sadd(alert_list_today,symbol)
+
+								#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+								redis_server.sadd(symbol_ids,ts_raw)
+							
+								detail_hash = {"date":str(date),
+								"date_time":str(date_time), 
+								"symbol":str(symbol), 
+								"alert_type":str(alert_type), 
+								"price":float(price), 
+								"percent":float(percent), 
+								"high":str(high), 
+								"low":str(low), 
+								"volume":int(qv),
+								"spread":float(spread),
+								"rsi_3mins":float(rsi_3m),
+								"rsi_5mins":float(rsi_5m),
+								"btc_price":str(btc_price),
+								"btc_percent":str(btc_percent),
+								"link":str(link),
+								}
+		
+								print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+								print(detail_hash)
+								redis_server.hmset(symbol_hash_detailed, detail_hash)
+
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+
 								broadcast('693711905',data)	
 								broadcast('420441454',data)	
 								broadcast('446619309',data)	
@@ -2742,6 +4030,8 @@ def main():
 								broadcast('506872080',data)	
 								broadcast('543018578',data)
 								broadcast('503482955',data)
+								broadcast('429640253',data)
+
 						elif rsi_3m>80 and rsi<100:
 							key = str(date.today())+str('rsi70')+str(csymbol)
 							if mc.get(key):
@@ -2753,6 +4043,49 @@ def main():
 							
 								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
 								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								
+								
+								timestamp=time.time()
+								ts_raw=timestamp
+								date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
+								date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							
+								alert_key_all=str(date_today)+'-ALERTS'
+								alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
+								alert_list_today=str(date_today)+'-ALERTLIST'
+								symbol_ids=str(symbol)+'-IDS'
+								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
+							
+								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							
+								#Push the whole Alert to redis
+								redis_server.rpush(alert_key_all,data)
+								print("Pushing coin to todays alert list: "+str(symbol))
+								print(data)
+							
+								#Add Unique Coin to Alerts list for today
+								redis_server.sadd(alert_list_today,symbol)
+
+								#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
+								redis_server.sadd(symbol_ids,ts_raw)
+							
+								detail_hash = {"date":str(date),
+								"date_time":str(date_time), 
+								"symbol":str(symbol), 
+								"alert_type":str(alert_type), 
+								"price":float(price), 
+								"percent":float(percent), 
+								"high":str(high), 
+								"low":str(low), 
+								"volume":int(qv),
+								"spread":float(spread),
+								"rsi_3mins":float(rsi_3m),
+								"rsi_5mins":float(rsi_5m),
+								"btc_price":str(btc_price),
+								"btc_percent":str(btc_percent),
+								"link":str(link),
+								}
+
 								broadcast('693711905',data)	
 								broadcast('420441454',data)	
 								broadcast('446619309',data)	
@@ -2763,15 +4096,17 @@ def main():
 								broadcast('506872080',data)	
 								broadcast('543018578',data)
 								broadcast('503482955',data)
+								broadcast('429640253',data)
+
 				else:	
 					print("no conditions met: "+str(symbol))
 
 while True:
-	try:
-		main()
-		print("Ended cycle\n")
-		quit()
-		time.sleep(60)
-	except:
-		print("error")
-		time.sleep(30)
+	#try:
+	main()
+	print("Ended cycle\n")
+	#quit()
+	time.sleep(60)
+	#except:
+	#print("error")
+	#time.sleep(30)
