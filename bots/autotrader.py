@@ -235,7 +235,7 @@ def main(exchange,symbol,c):
 	live=conn.hget(redis_key,"live")
 	live=live.decode('utf-8')
 	enable_buybacks=conn.hget(redis_key,"enable_buybacks")
-	enable_buybacks=live.decode('utf-8')
+	enable_buybacks=enable_buybacks.decode('utf-8')
 	rsi_sell=float(rsi_sell)
 	rsi_buy=float(rsi_buy)
 	stoploss_percent=float(stoploss_percent)
@@ -248,7 +248,7 @@ def main(exchange,symbol,c):
 	if c==0:
 		log_redis(redis_log,message,c)
 		print(message)
-		
+
 	key=str(symbol)+'-ORIGINAL-SL'	
 	mc.set(key,stoploss_percent,864000)
 	ignore_rsi=0
@@ -294,16 +294,29 @@ def main(exchange,symbol,c):
 	low=float(ticker['low'])
 	
 	lo_key="last_order-"+str(symbol)
-	print(lo_key)
+	#mc.delete(lo_key)
 	if mc.get(lo_key):
 		last_array=mc.get(lo_key)
+		last_price=float(last_array['price'])
+		last_type=last_array['side']
 	else:
+		#Cache last order in ram for 60 seconds to speed up api calls
 		last_array=fetch_last_order(exchange,symbol)
 		last_price=float(last_array['price'])
 		last_type=last_array['side']
-		print(last_array)
-		mc.set(key,1,60)			
-
+		mc.set(lo_key,last_array,60)
+		
+	if last_price==0.00:
+		#Was a market buy so we didn't pass a buy price work it out by cummulativeQuoteQty/aka fee / units
+		market_fee=float(last_array['cummulativeQuoteQty'])
+		market_units=float(last_array['origQty'])
+		last_price=market_fee/market_units
+		print("Debug LA: ")
+		print(last_price)
+	print(last_array)
+	#mc.set(lo_key,last_array,60)			
+	
+	print(last_array)
 	if last_type=='BUY':
 		trade_action='selling'
 	else:
@@ -335,6 +348,10 @@ def main(exchange,symbol,c):
 				try:
 					
 					if last_type=='BUY':
+					
+						print("Debug SL: "+str(stoploss_percent))
+						print("Debug SL: "+str(last_price))
+		
 						stoploss=last_price/100*stoploss_percent
 						stoploss_price=last_price-stoploss
 						
@@ -382,18 +399,6 @@ def main(exchange,symbol,c):
 		log_redis(redis_log,message,c)
 		print(message)
 
-		try:
-			last_array=fetch_last_order(exchange,symbol)
-			last_price=float(last_array['price'])
-			last_type=last_array['side']
-			print(last_type)
-		except:
-			#Check if there was never a trade on this pair if so force a buy or sell
-			print("mook")
-			last_type=str("")
-			last_price=int(0)	
-			print(last_price)
-					
 		if ticker:
 			message=str(symbol)+"\t"+str(bid)+"\t"+str(ask)+"\t"+str(last)+"\t"+str(high)+"\t"+str(low)+"\t"+str(rsi)
 			log_redis(redis_rsi_log,message,c)
@@ -452,14 +457,16 @@ def main(exchange,symbol,c):
 			
 		else:
 			if use_stoploss==1:
-				last_array=fetch_last_order(exchange,symbol)
-				last_price=float(last_array['price'])
-				last_type=last_array['side']
-
+		
 				if last_type=='BUY':
+
+		
 					stoploss=last_price/100*stoploss_percent
 					stoploss_price=last_price-stoploss
-					
+		
+					print("Debug: "+str(stoploss_percent))
+					print("Last Price: "+str(last_price))
+			
 					### ADD SMART STOPLOSS CODE
 					key=str(symbol)+'-SYSTEM-STOPLOSS'
 					if mc.get(key):
@@ -468,6 +475,11 @@ def main(exchange,symbol,c):
 					print("last buy price: "+str(last_price))
 					print("stoploss price: "+str(stoploss_price))
 					print("market price: "+str(last))
+					
+					message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
+					log_redis(redis_log,message,c)
+					print(message)
+
 					if last < stoploss_price:
 					
 						mc.delete(key)
