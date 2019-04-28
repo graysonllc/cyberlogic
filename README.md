@@ -8,7 +8,8 @@ Python Modules:
 
 	gparse, json, itemgetter, re, memcache, codecs, logging, sys, pymysql, time, requests, redis, configparser, datetime, talib, numpty, ccxt
 
-*Nix
+*Nix:
+
 	memcached
 	circus
 	redis
