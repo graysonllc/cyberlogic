@@ -212,7 +212,8 @@ def main(exchange,symbol,c):
 	rsi_sell=rsi_sell.decode('utf-8')
 	live=conn.hget(redis_key,"live")
 	live=live.decode('utf-8')
-
+	enable_buybacks=conn.hget(redis_key,"enable_buybacks")
+	enable_buybacks=live.decode('utf-8')
 	rsi_sell=float(rsi_sell)
 	rsi_buy=float(rsi_buy)
 	stoploss_percent=float(stoploss_percent)
@@ -346,7 +347,9 @@ def main(exchange,symbol,c):
 							broadcast(message)
 							message="Killing Bot"
 							log_redis(redis_trade_log,message,c)
-							return("kill")				
+							#IF enable buybacks isn't set to one fuck off and die cunt
+							if enable_buybacks!=1:
+								return("kill")				
 							key=str(symbol)+'-SL'	
 							mc.set(key,1,86400)			
 				except:
@@ -457,10 +460,11 @@ def main(exchange,symbol,c):
 
 						if live=="yes":
 							ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
-	
-						message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
-						broadcast(message)	
-						return("kill")
+							
+						if enable_buybacks!=1:
+							message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
+							broadcast(message)	
+							return("kill")
 						
 						key=str(symbol)+'-KILL'	
 						mc.set(key,1,86400)			
@@ -488,11 +492,11 @@ c=0
 while True:
 	ret="meh"
 	
-	#try:
-	ret=main(exchange,symbol,c)
-	#except:
-	#print("threw error sleeping for 3 seconds")
-	time.sleep(5)
-	#if ret=="kill":
-	#	sys.exit("die bitch")
+	try:
+		ret=main(exchange,symbol,c)
+	except:
+		print("threw error sleeping for 3 seconds")
+		time.sleep(5)
+	if ret=="kill":
+		sys.exit("die bitch")
 	c+=1

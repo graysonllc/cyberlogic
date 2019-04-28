@@ -309,6 +309,7 @@ def spawn_bot(symbol):
 	config.set(bot_name, 'warmup_delay', '0')
 	config.set(bot_name, 'numprocesses', '1')
 
+	configfile=configfile+"\n"
 	with open(bot_file, 'a+') as configfile:
 		config.write(configfile)
 		print("Write Config File to: "+str(bot_file))
@@ -359,6 +360,9 @@ def add_bot(bot, update, args):
 		live=live.decode('utf-8')
 		instant_market_buy=conn.hget(redis_key,"instant_market_buy")
 		instant_market_buy=int(instant_market_buy.decode('utf-8'))
+		enable_buybacks=conn.hget(redis_key,"enable_buybacks")
+		enable_buybacks=int(instant_market_buy.decode('utf-8'))
+		
 		bot_name=symbol
 		
 		r.sadd("botlist", bot_name)
@@ -390,6 +394,7 @@ def add_bot(bot, update, args):
 		ret=ret+"\n::Live Trading Enabled: "+live
 		ret=ret+"\n::TA Candle Size: "+candle_size
 		ret=ret+"\n::Instant Market Buy: "+str(instant_market_buy)
+		ret=ret+"\n::Enable Buy Backs After Stoploss Hit: "+str(enable_buybacks)
 
 		ret=ret+"\n\nIf you ever want to kill it issue /deletebot "+str(symbol)
 
@@ -421,6 +426,8 @@ def add_bot(bot, update, args):
 		parser.add_argument('--rsi_sell', help='Rsi Number over to trigger a sell, i.e 80')
 		parser.add_argument('--live', help='1 for Live trading, 0 for dry testing.')
 		parser.add_argument('--instant_market_buy', help='To make the first buy instant @ market price')
+		parser.add_argument('--enable_buybacks', help='If enabled will buy back cheaper after a stoploss sell')
+
 
 		print(argstr)
 		pargs = parser.parse_args(shlex.split(argstr))
@@ -443,6 +450,7 @@ def add_bot(bot, update, args):
 		live=str(pargs.live)
 		bot_name=str(trading_pair)
 		instant_market_buy=int(pargs.instant_market_buy)
+		enable_buybacks=int(pargs.enable_buybacks)
 
 		symbol=bot_name
 		if r.sismember("botlist", trading_pair):
@@ -468,6 +476,8 @@ def add_bot(bot, update, args):
 			ret=ret+"\n::Live Trading Enabled: "+live
 			ret=ret+"\n::Instant Market Buy: "+str(instant_market_buy)
 			ret=ret+"\n::TA Candle Size: "+candle_size
+			ret=ret+"\n::Enable Buybacks: "+str(enable_buybacks)
+
 			ret=ret+"\n\nIf you have reviewed all settings carefully reply with /addbot confirm to execute!"
 
 			bot_config = {"trading_on":str(trading_on),
@@ -485,6 +495,7 @@ def add_bot(bot, update, args):
 			"rsi_buy":float(rsi_buy),
 			"rsi_sell":float(rsi_sell),
 			"instant_market_buy":int(instant_market_buy),
+			"enable_buybacks":int(enable_buybacks),
 			"live":str(live)}
 			
 			print(bot_config)
