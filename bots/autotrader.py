@@ -61,6 +61,28 @@ def get_exchange():
 
 exchange=get_exchange()
 
+def delete_bot(symbol):
+	bot_name=symbol
+	r.srem("botlist", bot_name)
+	r.delete(bot_name)
+	redis_key="bconfig-"+bot_name
+	r.hdel(redis_key,'*')
+	
+	config = configparser.ConfigParser()
+	config_file='/home/crypto/cryptologic/pid-configs/init.ini'
+	config.read(config_file)
+	
+	bot_section='watcher:'+str(bot_name)
+	config.remove_section(bot_section)
+	
+	with open(config_file, 'w') as configfile:
+		config.write(configfile)
+		print("Write Config File to: "+str(config_file))
+		print("Wrote: "+str(configfile))
+	
+		subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
+		subprocess.run(["/usr/bin/circusctl", "restart"])
+
 def broadcast(text):
 
 	config = configparser.ConfigParser()
@@ -349,7 +371,8 @@ def main(exchange,symbol,c):
 							log_redis(redis_trade_log,message,c)
 							#IF enable buybacks isn't set to one fuck off and die cunt
 							if enable_buybacks!=1:
-								return("kill")				
+								return("kill")
+								delete_bot(symbol)			
 							key=str(symbol)+'-SL'	
 							mc.set(key,1,86400)			
 				except:
@@ -464,6 +487,7 @@ def main(exchange,symbol,c):
 						if enable_buybacks!=1:
 							message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
 							broadcast(message)	
+							delete_bot(symbol)
 							return("kill")
 						
 						key=str(symbol)+'-KILL'	
@@ -498,5 +522,6 @@ while True:
 		print("threw error sleeping for 3 seconds")
 		time.sleep(5)
 	if ret=="kill":
+		delete_bot(symbol)			
 		sys.exit("die bitch")
 	c+=1

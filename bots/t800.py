@@ -285,13 +285,28 @@ def sell(bot, update,args):
 def delete_bot(bot, update, args):
 	bot_name=args[0]
 	print(bot_name)
+	
 	ret="::Crypto Logic Deleted bot: "+str(bot_name)
 	r.srem("botlist", bot_name)
 	r.delete(bot_name)
 	redis_key="bconfig-"+bot_name
-
 	r.hdel(redis_key,'*')
-	bot.send_message(chat_id=update.message.chat_id, text=ret)
+	
+	config = configparser.ConfigParser()
+	config_file='/home/crypto/cryptologic/pid-configs/init.ini'
+	config.read(config_file)
+	
+	bot_section='watcher:'+str(bot_name)
+	config.remove_section(bot_section)
+	
+	with open(config_file, 'w') as configfile:
+		config.write(configfile)
+		print("Write Config File to: "+str(config_file))
+		print("Wrote: "+str(configfile))
+	
+		subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
+		subprocess.run(["/usr/bin/circusctl", "restart"])
+		bot.send_message(chat_id=update.message.chat_id, text=ret)
 
 def spawn_bot(symbol):
 	
@@ -303,19 +318,23 @@ def spawn_bot(symbol):
 	bot_name='watcher:'+str(symbol)
 	bot_file='/home/crypto/cryptologic/pid-configs/init.ini'
 	args='--trading_pair '+str(symbol)
-	config.add_section(bot_name)
-	config.set(bot_name, 'cmd', '/usr/bin/python3.6 /home/crypto/cryptologic/bots/autotrader.py')
-	config.set(bot_name, 'args', args)
-	config.set(bot_name, 'warmup_delay', '0')
-	config.set(bot_name, 'numprocesses', '1')
 
-	configfile=configfile+"\n"
-	with open(bot_file, 'a+') as configfile:
-		config.write(configfile)
-		print("Write Config File to: "+str(bot_file))
-		print("Wrote: "+str(configfile))
-	subprocess.run(["/usr/bin/circusd", "--daemon",bot_file])
-	subprocess.run(["/usr/bin/circusctl", "restart"])
+	#If we allready have this bot in the circus ini don't add it again
+	if not config.has_option(section, bot_name):
+	
+		config.add_section(bot_name)
+		config.set(bot_name, 'cmd', '/usr/bin/python3.6 /home/crypto/cryptologic/bots/autotrader.py')
+		config.set(bot_name, 'args', args)
+		config.set(bot_name, 'warmup_delay', '0')
+		config.set(bot_name, 'numprocesses', '1')
+
+		with open(bot_file, 'a+') as configfile:
+			configfile.write("\n")
+			config.write(configfile)
+			print("Write Config File to: "+str(bot_file))
+			print("Wrote: "+str(configfile))
+		subprocess.run(["/usr/bin/circusd", "--daemon",bot_file])
+		subprocess.run(["/usr/bin/circusctl", "restart"])
 
 def add_bot(bot, update, args):
 
