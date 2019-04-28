@@ -6,10 +6,27 @@ Requires following dependencies:
 
 Python Modules:
 
-	gparse, json, itemgetter, re, memcache, codecs, logging, sys, pymysql, time, requests, redis, configparser, datetime, talib, numpty, ccxt
+	gparse
+	json
+	itemgetter
+	re
+	memcache
+	codecs
+	logging
+	sys
+	pymysql
+	time
+	requests
+	redis
+	configparser
+	datetime
+	talib
+	numpty
+	ccxt
 
 *Nix:
 
 	memcached
 	circus
 	redis
+	mysql or mariadb
