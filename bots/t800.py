@@ -524,40 +524,157 @@ def add_bot(bot, update, args):
 			conn.hmset(redis_key, bot_config)
 			bot.send_message(chat_id=update.message.chat_id, text=ret)
 
+def replace_last(source_string, replace_what, replace_with):
+    head, _sep, tail = source_string.rpartition(replace_what)
+    return head + replace_with + tail
+
+
 def alerts(bot,update,args):
+	
+	first_price=0
+	
+	secs=int(args[0])
+
+	ts_now = datetime.datetime.now()
+	ts_now_ts=float(time.mktime(ts_now.timetuple())	)
+	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
+
+	print("TSN: ")
+	print(ts_now_ts)
+	print(ts_now_human)
+
+	timestamp=ts_now
+	ts_from = ts_now - datetime.timedelta(seconds=secs)
+	ts_from_ts=float(time.mktime(ts_from.timetuple()))
+	ts_from_human=datetime.datetime.fromtimestamp(ts_from_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	print("TSF: ")
+	print(ts_from_ts)
+	print(ts_from_human)
+
 	r = redis.Redis(host='localhost', port=6379, db=0)
-	timestamp=time.time()
-	ts_raw=timestamp
-	date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %I:%M:%S")
-	date_today=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+	
+	date_time=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
+	date_today=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d")
 
 	pump_key=str(date_today+"-ALERTLIST")
 	pump_coins=r.smembers(pump_key)
 
+	exchange=get_exchange()
+	
 	for coin in pump_coins:
 		coin=coin.decode('utf-8')
-		r.sort(coin+'-IDS')
 		coin_ids=r.smembers(coin+'-IDS')
-		message=":: Alerts For: "+str(coin)
+		coin_ids=sorted(coin_ids)
+		message="<b>:: Alerts For: "+str(coin)+str('</b>')
 		c=0
+		last_change=0
+
+		seen=0
+
 		for cid in coin_ids:
 			cid=cid.decode('utf-8')
-			#print(cid)
 			rkey=str(coin)+'-'+str(cid)
 			coin_hash=r.hgetall(rkey)
 			if coin_hash:
-				date_time=r.hget(rkey,"date_time").decode('utf-8')
-				price=r.hget(rkey,"price").decode('utf-8')
-				percent=r.hget(rkey,"percent").decode('utf-8')
-				spread=r.hget(rkey,"spread").decode('utf-8')
-				high=r.hget(rkey,"high").decode('utf-8')
-				low=r.hget(rkey,"low").decode('utf-8')
-				btc_price=r.hget(rkey,"btc_price").decode('utf-8')
-				btc_percent=r.hget(rkey,"btc_percent").decode('utf-8')
-				message=message+"\n"+str(date_time)+"\tPrice: "+str(price)+' Change %:'+str(percent)+" Spread: "+str(spread)
-				c+=1
-		if c>0:
-			bot.send_message(chat_id=update.message.chat_id, text=message)
+				symbol=r.hget(rkey,"symbol").decode('utf-8')
+				ticker_symbol=symbol
+
+				if symbol.endswith('BTC'):
+					ticker_symbol = replace_last(ticker_symbol, 'BTC', '')
+					ticker_symbol=ticker_symbol+'/BTC'
+				elif symbol.endswith('USDT'):
+					ticker_symbol=symbol
+					ticker_symbol = replace_last(ticker_symbol, 'USDT', '')
+					ticker_symbol=ticker_symbol+'/USDT'
+				elif symbol.endswith('BNB'):
+					ticker_symbol = replace_last(ticker_symbol, 'BNB', '')
+					ticker_symbol=ticker_symbol+'/BNB'
+				elif symbol.endswith('TUSD'):
+					ticker_symbol = replace_last(ticker_symbol, 'TUSD', '')
+					ticker_symbol=ticker_symbol+'/TUSD'	
+				elif symbol.endswith('USD'):
+					ticker_symbol = replace_last(ticker_symbol, 'USD', '')
+					ticker_symbol=ticker_symbol+'/USD'
+				elif symbol.endswith('USDC'):
+					ticker_symbol = replace_last(ticker_symbol, 'USDC', '')
+					ticker_symbol=ticker_symbol+'/USDC'
+				elif symbol.endswith('PAX'):
+					ticker_symbol = replace_last(ticker_symbol, 'PAX', '')
+					ticker_symbol=ticker_symbol+'/PAX'	
+										
+				cidn=float(cid)
+	
+				msorted={}
+			
+				if cidn>=ts_from_ts:
+					date_time=r.hget(rkey,"date_time").decode('utf-8')
+					price=float(r.hget(rkey,"price").decode('utf-8'))
+					percent=r.hget(rkey,"percent").decode('utf-8')
+					spread=r.hget(rkey,"spread").decode('utf-8')
+					high=r.hget(rkey,"high").decode('utf-8')
+					low=r.hget(rkey,"low").decode('utf-8')
+					btc_price=r.hget(rkey,"btc_price").decode('utf-8')
+					btc_price="{0:.8}".format(btc_price)
+									
+					if percent!=last_change or last_change==0:			
+						if seen==0:
+							first_price=price
+							first_price=str(format(price, '.8f'))
+							seen=1
+						if 'e' in str(price):
+							price=str(format(price, '.8f'))
+						else:
+							price=format(price, '.8f')
+						if float(percent)>float(last_change):
+							message=message+"\n\n<b>"+str(date_time)+"\tPrice: "+str(price)+' Change %:'+str(percent)+" Spread: "+str(spread)+'</b>'
+						else:
+							message=message+"\n\n<i>"+str(date_time)+"\tPrice: "+str(price)+' Change %:'+str(percent)+" Spread: "+str(spread)+'</i>'
+						c+=1
+					last_change=percent							
+				
+		if c>1:
+			print(symbol)
+			print(ticker_symbol)
+			ticker = exchange.fetch_ticker(ticker_symbol.upper())
+			tick=0
+			if ticker:
+				bid=float(ticker['bid'])
+				last=float(ticker['last'])
+				ask=float(ticker['ask'])
+				open=float(ticker['open'])
+				close=float(ticker['close'])
+				high=float(ticker['high'])
+				low=float(ticker['low'])
+				tick=1
+				first_price=float(first_price)
+				
+				if first_price>0.0 and tick==1:
+					price_diff=last-first_price
+					prices = [first_price,last]
+				
+					price_diff=str(format(price_diff, '.8f'))
+
+					print(first_price)
+					
+					for a, b in zip(prices[::1], prices[1::1]):
+						pdiff=100 * (b - a) / a
+			
+					pdiff=round(pdiff,2)
+
+					coin_stats=''
+					coin_stats=coin_stats+"\n<b>:: Current Ticker For: "+str(ticker_symbol)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: 24 Low: '+str(low)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: 24 High: '+str(high)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: Bid: '+str(bid)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: Ask: '+str(ask)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: Last: '+str(ask)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: First Alert Price: '+str(first_price)+'</b>'+"\n"
+					coin_stats=coin_stats+'<b>:: Price Diff Since First Alert: '+str(price_diff)+'('+str(pdiff)+'%)</b>'+"\n"
+
+					message=message+"\n"+coin_stats
+					if seen==1:
+						bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
 	
 def list_bots(bot, update, args):
 	#args[0]="twat"
