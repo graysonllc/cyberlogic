@@ -282,16 +282,16 @@ def sell(bot, update,args):
 
 		bot.send_message(chat_id=update.message.chat_id, text=message)
 
+
 def delete_bot(bot, update, args):
+	
 	bot_name=args[0]
 	print(bot_name)
 	
 	ret="::Crypto Logic Deleted bot: "+str(bot_name)
 	r.srem("botlist", bot_name)
 	r.delete(bot_name)
-	redis_key="bconfig-"+bot_name
-	r.hdel(redis_key,'*')
-	
+	r.sadd("botlist-stopped", bot_name)
 	config = configparser.ConfigParser()
 	config_file='/home/crypto/cryptologic/pid-configs/init.ini'
 	config.read(config_file)
@@ -299,13 +299,13 @@ def delete_bot(bot, update, args):
 	bot_section='watcher:'+str(bot_name)
 	config.remove_section(bot_section)
 	
-	with open(config_file, 'w') as configfile:
+	with open(config_file, 'w+') as configfile:
 		config.write(configfile)
 		print("Write Config File to: "+str(config_file))
 		print("Wrote: "+str(configfile))
 	
-		subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
-		subprocess.run(["/usr/bin/circusctl", "restart"])
+		#subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
+		#subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
 		bot.send_message(chat_id=update.message.chat_id, text=ret)
 
 def spawn_bot(symbol):
@@ -320,7 +320,9 @@ def spawn_bot(symbol):
 	args='--trading_pair '+str(symbol)
 
 	#If we allready have this bot in the circus ini don't add it again
-	if not config.has_option(section, bot_name):
+	config.read(bot_file)
+
+	if not config.has_section(bot_name):
 	
 		config.add_section(bot_name)
 		config.set(bot_name, 'cmd', '/usr/bin/python3.6 /home/crypto/cryptologic/bots/autotrader.py')
@@ -328,13 +330,13 @@ def spawn_bot(symbol):
 		config.set(bot_name, 'warmup_delay', '0')
 		config.set(bot_name, 'numprocesses', '1')
 
-		with open(bot_file, 'a+') as configfile:
+		with open(bot_file, 'w') as configfile:
 			configfile.write("\n")
 			config.write(configfile)
 			print("Write Config File to: "+str(bot_file))
 			print("Wrote: "+str(configfile))
-		subprocess.run(["/usr/bin/circusd", "--daemon",bot_file])
-		subprocess.run(["/usr/bin/circusctl", "restart"])
+
+		subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
 
 def add_bot(bot, update, args):
 
@@ -378,9 +380,9 @@ def add_bot(bot, update, args):
 		live=conn.hget(redis_key,"live")
 		live=live.decode('utf-8')
 		instant_market_buy=conn.hget(redis_key,"instant_market_buy")
-		instant_market_buy=int(instant_market_buy.decode('utf-8'))
+		instant_market_buy=instant_market_buy.decode('utf-8')
 		enable_buybacks=conn.hget(redis_key,"enable_buybacks")
-		enable_buybacks=int(instant_market_buy.decode('utf-8'))
+		enable_buybacks=enable_buybacks.decode('utf-8')
 		
 		bot_name=symbol
 		
@@ -417,10 +419,11 @@ def add_bot(bot, update, args):
 
 		ret=ret+"\n\nIf you ever want to kill it issue /deletebot "+str(symbol)
 
-		if instant_market_buy==1:
-			exchange=get_exchange()
-			ret=exchange.create_order (symbol, 'MARKET', 'BUY', units)
-			print(ret)
+		if instant_market_buy=="yes":
+			print("")
+			#exchange=get_exchange()
+			#ret=exchange.create_order (symbol, 'MARKET', 'BUY', units)
+			#print(ret)
 		spawn_bot(symbol)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)	
 
@@ -447,10 +450,7 @@ def add_bot(bot, update, args):
 		parser.add_argument('--instant_market_buy', help='To make the first buy instant @ market price')
 		parser.add_argument('--enable_buybacks', help='If enabled will buy back cheaper after a stoploss sell')
 
-
-		print(argstr)
 		pargs = parser.parse_args(shlex.split(argstr))
-		print(pargs)
 
 		trading_on=str(pargs.trading_on)
 		rsi_symbol=str(pargs.rsi_symbol)
@@ -461,15 +461,15 @@ def add_bot(bot, update, args):
 		buy_pos=int(pargs.buy_pos)
 		sell_pos=int(pargs.sell_pos)
 		stoploss_percent=float(pargs.stoploss_percent)
-		use_stoploss=int(pargs.use_stoploss)
+		use_stoploss=str(pargs.use_stoploss)
 		candle_size=str(pargs.candle_size)
 		safeguard_percent=float(pargs.safeguard_percent)
 		rsi_buy=float(pargs.rsi_buy)
 		rsi_sell=float(pargs.rsi_sell)
 		live=str(pargs.live)
 		bot_name=str(trading_pair)
-		instant_market_buy=int(pargs.instant_market_buy)
-		enable_buybacks=int(pargs.enable_buybacks)
+		instant_market_buy=str(pargs.instant_market_buy)
+		enable_buybacks=str(pargs.enable_buybacks)
 
 		symbol=bot_name
 		if r.sismember("botlist", trading_pair):
@@ -513,8 +513,8 @@ def add_bot(bot, update, args):
 			"safeguard_percent":float(safeguard_percent),
 			"rsi_buy":float(rsi_buy),
 			"rsi_sell":float(rsi_sell),
-			"instant_market_buy":int(instant_market_buy),
-			"enable_buybacks":int(enable_buybacks),
+			"instant_market_buy":str(instant_market_buy),
+			"enable_buybacks":str(enable_buybacks),
 			"live":str(live)}
 			
 			print(bot_config)
@@ -620,12 +620,12 @@ def alerts(bot,update,args):
 					if percent!=last_change or last_change==0:			
 						if seen==0:
 							first_price=price
-							first_price=str(format(price, '.8f'))
+							first_price=str(format(price, '.6f'))
 							seen=1
 						if 'e' in str(price):
-							price=str(format(price, '.8f'))
+							price=str(format(price, '.6f'))
 						else:
-							price=format(price, '.8f')
+							price=format(price, '.6f')
 						if float(percent)>float(last_change):
 							message=message+"\n\n<b>"+str(date_time)+"\tPrice: "+str(price)+' Change %:'+str(percent)+" Spread: "+str(spread)+'</b>'
 						else:
@@ -633,7 +633,7 @@ def alerts(bot,update,args):
 						c+=1
 					last_change=percent							
 				
-		if c>1:
+		if c>0:
 			print(symbol)
 			print(ticker_symbol)
 			ticker = exchange.fetch_ticker(ticker_symbol.upper())
@@ -653,7 +653,7 @@ def alerts(bot,update,args):
 					price_diff=last-first_price
 					prices = [first_price,last]
 				
-					price_diff=str(format(price_diff, '.8f'))
+					price_diff=str(format(price_diff, '.6f'))
 
 					print(first_price)
 					
@@ -671,6 +671,12 @@ def alerts(bot,update,args):
 					coin_stats=coin_stats+'<b>:: Last: '+str(ask)+'</b>'+"\n"
 					coin_stats=coin_stats+'<b>:: First Alert Price: '+str(first_price)+'</b>'+"\n"
 					coin_stats=coin_stats+'<b>:: Price Diff Since First Alert: '+str(price_diff)+'('+str(pdiff)+'%)</b>'+"\n"
+
+					csymbol=ticker_symbol
+					csymbol=csymbol.replace("/","_",1)
+					link='https://www.binance.com/en/trade/pro/'+csymbol
+
+					coin_stats=coin_stats+':: '+str(link)
 
 					message=message+"\n"+coin_stats
 					if seen==1:

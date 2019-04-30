@@ -25,7 +25,7 @@ r = redis.Redis(host='localhost', port=6379, db=0)
 
 botlist=r.smembers("botlist")
 
-print("Polling Running Bots\n")
+print(":::STOPLOSS/MOVER Polling Running Bots\n")
 
 import ccxt  # noqa: E402
 	
@@ -77,7 +77,7 @@ def loop_bots():
 			buy_price=float(buy_array['price'])
 			units=float(buy_array['executedQty'])
 			
-			print(symbol+str("::: Last Buy Price: "+str(buy_price)+" Market Price: "+str(market_price))+" Units: "+str(units))		
+			print(symbol+str(":::STOPLOSS/MOVER Last Buy Price: "+str(buy_price)+" Market Price: "+str(market_price))+" Units: "+str(units))		
 		
 			profit=market_price-buy_price
 			profit=profit*units
@@ -87,7 +87,7 @@ def loop_bots():
 				percent=round(percent,2)
 				profit=round(profit,2)
 
-			message=str(symbol)+"::: Profit STATS: Profit: "+str(profit)+' ('+str(percent)+'%)'
+			message=str(symbol)+":::STOPLOSS/MOVER Profit STATS: Profit: "+str(profit)+' ('+str(percent)+'%)'
 			print(message)
 
 			key=str(symbol)+'-ORIGINAL-SL'	
@@ -96,7 +96,7 @@ def loop_bots():
 				original_stoploss_price_ded=buy_price/100*original_stoploss
 				original_stoploss_price=buy_price-original_stoploss_price_ded
 
-			print(symbol+str("::: ORIGINAL STOPLOSS PRICE: "+str(original_stoploss_price)))
+			print(symbol+str(":::STOPLOSS/MOVER ORIGINAL STOPLOSS PRICE: "+str(original_stoploss_price)))
 
 			key=str(symbol)+'-SYSTEM-STOPLOSS'
 			
@@ -105,11 +105,11 @@ def loop_bots():
 				dec=buy_price/100*original_stoploss
 				stoploss=market_price-dec
 				
-				print(symbol+"::: Market Price Now:"+str(market_price)+" is above last buy lets move the goal posts\n")
+				print(symbol+":::STOPLOSS/MOVER Market Price Now:"+str(market_price)+" is above last buy lets move the goal posts\n")
 				
 				if mc.get(key):
 					goalpost_stoploss=mc.get(key)
-					print(symbol+str("::: GOALPOST STOPLOSS PRICE: "+str(goalpost_stoploss)))
+					print(symbol+str(":::STOPLOSS/MOVER GOALPOST STOPLOSS PRICE: "+str(goalpost_stoploss)))
 
 				#If we allready moved goal posts once increment counter only if higher than last goal post move
 				key=str(symbol)+'-SYSTEM-STOPLOSS'
@@ -117,10 +117,9 @@ def loop_bots():
 					last_cycle_inc=mc.get(key)
 						
 					if stoploss>last_cycle_inc:
-						print("Incrementing Cycles\n")
 						key=str(symbol)+'-GOALPOSTS'
 						cycles=r.incr(key)
-						print(str(symbol)+"Moved Goal Post: "+str(cycles)+" Times!\n")
+						print(str(symbol)+":::STOPLOSS/MOVER MOVED GOAL POST: "+str(cycles)+" Times!\n")
 						key=str(symbol)+'-SYSTEM-STOPLOSS'
 						mc.set(key,stoploss,86400)			
 				else:
@@ -130,9 +129,10 @@ def loop_bots():
 while True:
 	try:
 		loop_bots()
+		#print("STOPLOSS UPDATER")
 	except:
 		print("")
-		time.sleep(1)		
+	time.sleep(5)		
 
 
 		

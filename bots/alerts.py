@@ -46,16 +46,12 @@ def get_exchange():
 exchange=get_exchange()	
 
 def broadcast(chatid,text):
-	print("got "+str(text))
-	
 	config = configparser.ConfigParser()
 	config.read('/root/akeys/b.conf')
 	telegram_id=config['binance']['TELEGRAM_ID']
 	token = telegram_id
 	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+text
-	print(url)
 	r=requests.get(url)
-	print(r)
 	html = r.content
 
 def fetch_prices(exchange, symbol):
@@ -400,7 +396,7 @@ def main():
 		csymbol=csymbol.replace("/","_",1)
 		det=int(0)
 		today = str(date.today())
-		print("Today: "+str(today))
+		#print("Today: "+str(today))
 		key = str(date.today())+str('last_price')+str(csymbol)
 		
 		last_price=0
@@ -426,6 +422,7 @@ def main():
 		high=row['high']
 		qv=row['quoteVolume']
 		price=close
+		dprint=1
 		if skip!=1:
 		
 			mc.set(key,close,86400)
@@ -447,7 +444,7 @@ def main():
 					if percent>1 and percent<2:
 						key = str(date.today())+str('newkey-sd1dddddasssasdspddsajja')+str(csymbol)
 						if mc.get(key):
-							print("seen p1-key")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -543,8 +540,8 @@ def main():
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
+							#print("Pushing coin to todays alert list: "+str(symbol))
+							#print(print(data)
 							
 							#Add Unique Coin to Alerts list for today
 							redis_server.sadd(alert_list_today,symbol)
@@ -591,7 +588,7 @@ def main():
 					if percent>2 and percent<3:
 						key = str(date.today())+str('DfffD3')+str(csymbol)
 						if mc.get(key):
-							print("seen p2")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)						
@@ -735,7 +732,7 @@ def main():
 					if percent>3 and percent<4:
 						key = str(date.today())+str('DdddD4')+str(csymbol)
 						if mc.get(key):
-							print("seen key3")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -880,7 +877,7 @@ def main():
 					if percent>4 and percent<5:
 						key = str(date.today())+str('ddddddd4')+str(csymbol)
 						if mc.get(key):
-							print("seen key5")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1026,7 +1023,7 @@ def main():
 					
 						key = str(date.today())+str('djdhdhjjdh')+str(csymbol)
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1171,7 +1168,7 @@ def main():
 					elif percent>6 and percent<7:
 						key = str(date.today())+str('dddddiduiiudyud')+str(csymbol)
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1315,7 +1312,7 @@ def main():
 					elif percent>7 and percent<8:
 						key = str(date.today())+str('djdhdhdddjjdh')+str(csymbol)
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1462,7 +1459,7 @@ def main():
 						key = str(date.today())+str('djdhdhssjjdh')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1609,7 +1606,7 @@ def main():
 					elif percent>9 and percent<10:
 						key = str(date.today())+str('DALEdjdjjdjdRT3')+str(csymbol)
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1757,7 +1754,7 @@ def main():
 						key = str(date.today())+str('DALEddjdjjdjdRT3')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -1905,7 +1902,7 @@ def main():
 						key = str(date.today())+str('dddihsjkhhkjddhkj')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2052,7 +2049,7 @@ def main():
 						key = str(date.today())+str('DALEdjddddjjdjdRT3')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2200,7 +2197,7 @@ def main():
 						key = str(date.today())+str('ddkdkkhjdkj33')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2347,7 +2344,7 @@ def main():
 						key = str(date.today())+str('dkdhjkdhkjdkjh333d')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2493,7 +2490,7 @@ def main():
 						key = str(date.today())+str('adhjkhdjhjhkj')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2640,7 +2637,7 @@ def main():
 						key = str(date.today())+str('dkdjkdkh234')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2789,7 +2786,7 @@ def main():
 						key = str(date.today())+str('djdjhg3ujdhd')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -2937,7 +2934,7 @@ def main():
 						key = str(date.today())+str('djdjhg3uddn39jdhd')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -3083,7 +3080,7 @@ def main():
 						key = str(date.today())+str('djdhdhh33')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -3230,7 +3227,7 @@ def main():
 						key = str(date.today())+str('djdh8838383dhh33')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -3379,7 +3376,7 @@ def main():
 						key = str(date.today())+str('djd383838hdhh33')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -3525,7 +3522,7 @@ def main():
 						key = str(date.today())+str('djd383dddd838hdhh33')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -3670,7 +3667,7 @@ def main():
 						key = str(date.today())+str('m0000ned')+str(csymbol)
 
 						if mc.get(key):
-							print("")
+							dprint=2
 						else:
 							det=int(1)
 							mc.set(key,1,3600)
@@ -3816,7 +3813,7 @@ def main():
 						if rsi_3m>53 and rsi_3m<65:
 							key = str(date.today())+str('rsi53')+str(csymbol)
 							if mc.get(key):
-								print("")
+								dprint=2
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
@@ -3889,7 +3886,7 @@ def main():
 						elif rsi_3m>80:
 							key = str(date.today())+str('rsi70')+str(csymbol)
 							if mc.get(key):
-								print("")
+								dprint=2
 							else:
 								key=str(pair)+str("pkey-1hour")
 								mc.set(key,1,86400)
@@ -3963,7 +3960,7 @@ def main():
 						elif rsi_3m>70 and rsi_3m<80:
 							key = str(date.today())+str('rsi70')+str(csymbol)
 							if mc.get(key):
-								print("")
+								dprint=2
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
@@ -4035,7 +4032,7 @@ def main():
 						elif rsi_3m>80 and rsi<100:
 							key = str(date.today())+str('rsi70')+str(csymbol)
 							if mc.get(key):
-								print("")
+								dprint=2
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
@@ -4097,8 +4094,8 @@ def main():
 								broadcast('503482955',data)
 								broadcast('429640253',data)
 
-				else:	
-					print("no conditions met: "+str(symbol))
+				#else:	
+				#	print("no conditions met: "+str(symbol))
 
 while True:
 	try:

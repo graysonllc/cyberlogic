@@ -13,6 +13,7 @@ import requests
 import redis
 import configparser
 from datetime import datetime
+import subprocess
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -50,11 +51,15 @@ def get_exchange():
 	binance_api_key=config['binance']['API_KEY']
 	binance_api_secret=config['binance']['API_SECRET']
 	
+	members=r.smembers("botlist")
+	sizeof=len(members)
+	throttle=sizeof*1200
+
 	exchange = ccxt.binance({
     'apiKey': binance_api_key,
     'secret': binance_api_secret,
     'enableRateLimit': True,
-    'rateLimit': 1200,
+    'rateLimit': throttle,
     'verbose': False,  # switch it to False if you don't want the HTTP log
 	})
 	return(exchange)
@@ -66,8 +71,8 @@ def delete_bot(symbol):
 	r.srem("botlist", bot_name)
 	r.delete(bot_name)
 	redis_key="bconfig-"+bot_name
-	r.hdel(redis_key,'*')
-	
+	all_keys = list(r.hgetall(redis_key).keys())
+	r.hdel(redis_key, "*")	
 	config = configparser.ConfigParser()
 	config_file='/home/crypto/cryptologic/pid-configs/init.ini'
 	config.read(config_file)
@@ -75,13 +80,18 @@ def delete_bot(symbol):
 	bot_section='watcher:'+str(bot_name)
 	config.remove_section(bot_section)
 	
+	for line in config:
+		print(line)
 	with open(config_file, 'w') as configfile:
+	
+		print("debug")
+		print(config)
 		config.write(configfile)
+		
 		print("Write Config File to: "+str(config_file))
 		print("Wrote: "+str(configfile))
 	
-		subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
-		subprocess.run(["/usr/bin/circusctl", "restart"])
+	subprocess.run(["/usr/bin/circusctl", "restart"])
 
 def broadcast(text):
 
@@ -234,13 +244,15 @@ def main(exchange,symbol,c):
 	rsi_sell=rsi_sell.decode('utf-8')
 	live=conn.hget(redis_key,"live")
 	live=live.decode('utf-8')
+	
 	enable_buybacks=conn.hget(redis_key,"enable_buybacks")
-	enable_buybacks=enable_buybacks.decode('utf-8')
+	if enable_buybacks:
+		enable_buybacks=enable_buybacks.decode('utf-8')
 	rsi_sell=float(rsi_sell)
 	rsi_buy=float(rsi_buy)
 	stoploss_percent=float(stoploss_percent)
 	safeguard_percent=float(safeguard_percent)
-	use_stoploss=int(use_stoploss)
+	use_stoploss=str(use_stoploss)
 	units=float(units)
 	
 	message="Exchange: "+trading_on+"\tExchange: "+trading_on+"\tTrade Pair: "+str(symbol)+"\tUnits: "+str(units)+"\tBuy Book Scrape Position: "+str(buy_pos)+"\tSell Book Scrape Position: "+str(sell_pos)+"\tRSI Buy: "+str(rsi_buy)+"\tRSI Sell: "+str(rsi_sell)+"\tStoploss Percent: "+str(stoploss_percent)+"\tSafeguard Percent: "+str(safeguard_percent)+"\tCandle Size: "+candle_size+"\tStoploss Enabled: "+str(use_stoploss)+"\tLive Trading Enabled: "+live
@@ -343,7 +355,7 @@ def main(exchange,symbol,c):
 				log_redis(redis_log,message,c)
 				print(message)
 
-		if use_stoploss==1:
+		if use_stoploss=="yes":
 			
 				try:
 					
@@ -369,11 +381,12 @@ def main(exchange,symbol,c):
 						log_redis(redis_log,message,c)
 						print(message)
 
-						if last < stoploss_price:
+						if last <= stoploss_price:
 
-							exchange.cancelOrder(order_id,symbol)
-							mc.delete(key)
+							book=fetch_order_book(exchange,symbol,'bids',1)
 							sell_price=float(book[0][0])
+
+							mc.delete(key)
 							print("creating stoploss order: "+str(sell_price))
 							message="Alert Stoploss Hit line 260, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
 							broadcast(message)
@@ -382,14 +395,15 @@ def main(exchange,symbol,c):
 							
 							if live=="yes":
 								ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
-						
+
 							broadcast(message)
 							message="Killing Bot"
 							log_redis(redis_trade_log,message,c)
 							#IF enable buybacks isn't set to one fuck off and die cunt
-							if enable_buybacks!=1:
-								return("kill")
+							if enable_buybacks=='no':
 								delete_bot(symbol)			
+								print("killing bot/deleting it")	
+								return("kill")
 							key=str(symbol)+'-SL'	
 							mc.set(key,1,86400)			
 				except:
@@ -456,11 +470,10 @@ def main(exchange,symbol,c):
 			log_redis(redis_trade_log,message,c)
 			
 		else:
-			if use_stoploss==1:
+			if use_stoploss=="yes":
 		
 				if last_type=='BUY':
 
-		
 					stoploss=last_price/100*stoploss_percent
 					stoploss_price=last_price-stoploss
 		
@@ -480,7 +493,7 @@ def main(exchange,symbol,c):
 					log_redis(redis_log,message,c)
 					print(message)
 
-					if last < stoploss_price:
+					if last <= stoploss_price:
 					
 						mc.delete(key)
 
@@ -496,10 +509,10 @@ def main(exchange,symbol,c):
 						if live=="yes":
 							ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
 							
-						if enable_buybacks!=1:
+						if enable_buybacks=='no':
 							message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
-							broadcast(message)	
 							delete_bot(symbol)
+							broadcast(message)	
 							return("kill")
 						
 						key=str(symbol)+'-KILL'	
@@ -523,6 +536,9 @@ args = parser.parse_args()
 symbol=str(args.trading_pair)
 print(symbol)
 
+if r.sismember('botlist',symbol)==0:
+	delete_bot(symbol)			
+	sys.exit("bot not in list")
 c=0
 
 while True:
@@ -533,7 +549,8 @@ while True:
 	except:
 		print("threw error sleeping for 3 seconds")
 		time.sleep(5)
+	
 	if ret=="kill":
 		delete_bot(symbol)			
-		sys.exit("die bitch")
+		sys.exit("die")
 	c+=1
