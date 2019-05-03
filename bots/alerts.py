@@ -50,7 +50,7 @@ def broadcast(chatid,text):
 	config.read('/root/akeys/b.conf')
 	telegram_id=config['binance']['TELEGRAM_ID']
 	token = telegram_id
-	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+text
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
 	r=requests.get(url)
 	html = r.content
 
@@ -75,20 +75,23 @@ def fetch_last_order(exchange,symbol):
 def die():
 	sys.exit("fuck")
 
-def get_price(pair,ts):
+def get_price(pair,start_ts,end_ts):
 
-	try:
-		url="https://api.binance.com/api/v1/klines?symbol="+pair+"&startTime="+ts+"&interval=1m"
-		r=requests.get(url)
-		res = (r.content.strip())
-		status = r.status_code
-		rsi_status=''
-		trades = json.loads(res.decode('utf-8'))
-		data=trades[0]
-		price=float(data[4])
-		return(price)
-	except:
-		return("error")
+	p=0
+	#try:
+	start_ts=start_ts+"000"
+	url="https://api.binance.com/api/v1/klines?symbol="+pair+"&startTime="+str(start_ts)+"&interval=1m"
+	print(url)
+	r=requests.get(url)
+	res = (r.content.strip())
+	status = r.status_code
+	rsi_status=''
+	trades = json.loads(res.decode('utf-8'))
+	data=trades[0]
+	price=float(data[4])
+	return(price)
+	#except:
+	#	p=1
 
 def diff_percent(low,high):
 	prices = [low,high]
@@ -102,230 +105,93 @@ def mojo(pair,price_now):
 
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_1hour=ts_now-3600*1000
+	blank=1
+	
+	#try:
+	ts_now = datetime.datetime.now()
+	ts_now_ts=int(time.mktime(ts_now.timetuple()))	
+	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
 
-		key=str(pair)+str("pkey-1hour")
-		if(mc.get(key)):
-			mc.delete(key)
+	key=str(pair)+str("pkey-1hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_1hour = ts_now - datetime.timedelta(seconds=3600)
+	ts_1hour_ts=int(time.mktime(ts_1hour.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_1hour_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_1_hours_ago=get_price(pair,str(ts_1hour_ts),str(ts_now_ts))
+	if price_1_hours_ago:
+		price_1_hours_ago=float(price_1_hours_ago)
+		print("P1HA")
+		print(price_1_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_1_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_1_hours_ago)+" Diff %: "+str(price_diff))
+	
+	key=str(pair)+str("pkey-3hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_3hour = ts_now - datetime.timedelta(seconds=10800)
+	ts_3hour_ts=int(time.mktime(ts_3hour.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_3hour_ts).strftime("%Y-%m-%d %H:%M:%S")
 		
-		price_1_hours_ago=float(get_price(pair,str(ts_1hour)))
-		if price_1_hours_ago!="error":
-			price_now=float(price_now)
-			price_diff=diff_percent(price_1_hours_ago,price_now)
-			if price_diff>0:
-				
-
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 1 Hour Ago: "+str(price_1_hours_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
+	price_3_hours_ago=get_price(pair,str(ts_3hour_ts),str(ts_now_ts))
+	if price_3_hours_ago:
+		price_3_hours_ago=float(price_3_hours_ago)
+		print("P3HA")
+		print(price_3_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_3_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 3 Hour Ago: "+str(tsd)+" : "+str(price_3_hours_ago)+" Diff %: "+str(price_diff))
 	
-	time.sleep(0.5)
-
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_2hour=ts_now-7200*1000
+	key=str(pair)+str("pkey-6hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_6hour = ts_now - datetime.timedelta(seconds=21600)
+	ts_6hour_ts=int(time.mktime(ts_6hour.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_6hour_ts).strftime("%Y-%m-%d %H:%M:%S")
 		
-		key=str(pair)+str("pkey-2hour")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		price_2_hours_ago=get_price(pair,str(ts_2hour))
-		if price_2_hours_ago!="error":
-			price_diff=diff_percent(price_2_hours_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-
-				print("Price Now: "+str(price_now)+" 2 Hour Ago: "+str(price_2_hours_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-
-	time.sleep(0.5)
+	price_6_hours_ago=get_price(pair,str(ts_6hour_ts),str(ts_now_ts))
+	if price_6_hours_ago:
+		price_6_hours_ago=float(price_6_hours_ago)
+		print("P6HA")
+		print(price_6_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_6_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" "+str(price_now)+" 6 Hour Ago: "+str(tsd)+" : "+str(price_6_hours_ago)+" Diff %: "+str(price_diff))
 	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_3hour=ts_now-10800*1000
+	key=str(pair)+str("pkey-12hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_12hour = ts_now - datetime.timedelta(seconds=43200)
+	ts_12hour_ts=int(time.mktime(ts_12hour.timetuple()))
 
-		key=str(pair)+str("pkey-3hour")
-		if(mc.get(key)):
-			mc.delete(key)		
+	tsd=datetime.datetime.fromtimestamp(ts_12hour_ts).strftime("%Y-%m-%d %H:%M:%S")
 		
-		price_3_hours_ago=get_price(pair,str(ts_3hour))
-		if price_3_hours_ago!="error":
-			price_diff=diff_percent(price_3_hours_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 3 Hour Ago: "+str(price_3_hours_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-	
-	time.sleep(0.5)
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_4hour=ts_now-14400*1000
-
-		key=str(pair)+str("pkey-4hour")
-		if(mc.get(key)):
-			mc.delete(key)
-			
-		price_4_hours_ago=get_price(pair,str(ts_4hour))
-		if price_4_hours_ago!="error":
-			price_diff=diff_percent(price_4_hours_ago,price_now)
-			if price_diff>0:							
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 4 Hour Ago: "+str(price_4_hours_ago)+" Diff %: "+str(price_diff))
-	except:	
-		print("")
-
-	time.sleep(0.5)
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_5hour=ts_now-18000*1000
-
-		key=str(pair)+str("pkey-5hour")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		price_5_hours_ago=get_price(pair,str(ts_5hour))
-		if price_5_hours_ago!="error":
-			price_diff=diff_percent(price_5_hours_ago,price_now)
-			if price_diff>0:
-							
-				mc.set(key,price_diff,86400)
-
-				print("Price Now: "+str(price_now)+" 5 Hour Ago: "+str(price_5_hours_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-	
-	time.sleep(0.5)	
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_6hour=ts_now-21600*1000
-
-		key=str(pair)+str("pkey-6hour")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		price_6_hours_ago=get_price(pair,str(ts_6hour))
-		if price_6_hours_ago!="error":
-			price_diff=diff_percent(price_6_hours_ago,price_now)
-			if price_diff>0:			
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 6 Hour Ago: "+str(price_6_hours_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-	
-	time.sleep(0.5)
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_12hour=ts_now-43200*1000
-		price_12_hours_ago=get_price(pair,str(ts_12hour))
+	price_12_hours_ago=get_price(pair,str(ts_12hour_ts),str(ts_now_ts))
+	if price_12_hours_ago:
+		price_12_hours_ago=float(price_12_hours_ago)
 		
-		key=str(pair)+str("pkey-12hour")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		
-		if price_6_hours_ago!="error":
-			price_diff=diff_percent(price_12_hours_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 12 Hour Ago: "+str(price_12_hours_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-
-	time.sleep(0.5)
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_5min=ts_now-300*1000
-		
-		key=str(pair)+str("pkey-5mins")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		price_5_min_ago=get_price(pair,str(ts_5min))
-		if price_5_min_ago!="error":
-			price_diff=diff_percent(price_5_min_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 5 Min Ago: "+str(price_5_min_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-
-	time.sleep(0.5)
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_10min=ts_now-600*1000
-
-		key=str(pair)+str("pkey-10mins")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		price_10_min_ago=get_price(pair,str(ts_10min))
-		if price_10_min_ago!="error":
-			price_diff=diff_percent(price_10_min_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 10 Min Ago: "+str(price_10_min_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
-	
-	time.sleep(0.5)
-	
-	try:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-		ts_15min=ts_now-900*1000
-
-		key=str(pair)+str("pkey-15mins")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		price_15_min_ago=get_price(pair,str(ts_15min))
-		if price_15_min_ago!="error":
-			price_diff=diff_percent(price_15_min_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-				print("Price Now: "+str(price_now)+" 15 Min Ago: "+str(price_15_min_ago)+" Diff %: "+str(price_diff))
-	except:
-		ts_now = int(round(time.time() * 1000))
-		ts_now=ts_now+1
-	
-	time.sleep(0.5)	
-	
-	try:
-		ts_30min=ts_now-1800*1000
-		price_30_min_ago=get_price(pair,str(ts_30min))
-
-		key=str(pair)+str("pkey-30mins")
-		if(mc.get(key)):
-			mc.delete(key)
-
-		if price_30_min_ago!="error":
-			price_diff=diff_percent(price_30_min_ago,price_now)
-			if price_diff>0:
-				mc.set(key,price_diff,86400)
-
-				print("Price Now: "+str(price_now)+" 30 Min Ago: "+str(price_30_min_ago)+" Diff %: "+str(price_diff))
-	except:
-		print("")
+		print("P12HA")
+		print(price_12_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_12_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 12 Hour Ago: "+str(tsd)+" : "+str(price_12_hours_ago)+" Diff %: "+str(price_diff))
+	#except:
+	#	print("")
+	#sys.exit("Die")
 
 def get_rsi(pair,interval):
 
@@ -380,6 +246,9 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 
 def main():
 	
+	only_broadcast_up=1
+	broadcast_message=0
+	
 	from datetime import date
 	tickers=exchange.fetchTickers()
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -396,7 +265,6 @@ def main():
 		csymbol=csymbol.replace("/","_",1)
 		det=int(0)
 		today = str(date.today())
-		#print("Today: "+str(today))
 		key = str(date.today())+str('last_price')+str(csymbol)
 		
 		last_price=0
@@ -423,10 +291,28 @@ def main():
 		qv=row['quoteVolume']
 		price=close
 		dprint=1
-		if skip!=1:
+		pair=symbol
+		our_percent=0
 		
+		if skip!=1:
+			
+			key=str(pair)+str("pkey-12hour")
+			if mc.get(key):
+				our_percent=mc.get(key)
+
+			key=str(pair)+str("LAST_PRICE_KEY")
+			if mc.get(key):
+				last_price=float(mc.get(key))
+				
+				if(last_price>=float(close)):
+					alert_direction="UP"
+				else:
+					alert_direction="DOWN"	
+			else:
+				alert_direction="UP"			
+			
 			mc.set(key,close,86400)
-	
+
 			if qv >=min_vol:
 				prices = [low,high]
 				#print(prices)
@@ -437,11 +323,11 @@ def main():
 				
 				spread=pdiff
 
-				if pdiff>2.5 and percent>1:
+				if percent>1:
 				
 					pair=symbol
 
-					if percent>1 and percent<2:
+					if percent>1 and percent<2 or our_percent>1 and our_percent<2:
 						key = str(date.today())+str('newkey-sd1dddddasssasdspddsajja')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -451,37 +337,20 @@ def main():
 
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
+														
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
 								one_hours=mc.get(key)
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -489,31 +358,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -521,10 +365,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 							
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -536,13 +380,11 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
-							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
 							#print("Pushing coin to todays alert list: "+str(symbol))
-							#print(print(data)
-							
+														
 							#Add Unique Coin to Alerts list for today
 							redis_server.sadd(alert_list_today,symbol)
 
@@ -573,19 +415,26 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
 							
-					if percent>2 and percent<3:
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
+
+							
+					if percent>2 and percent<3 or our_percent>2 and our_percent<3:
 						key = str(date.today())+str('DfffD3')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -594,7 +443,8 @@ def main():
 							mc.set(key,1,3600)						
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
+
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -602,61 +452,18 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+														
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -664,10 +471,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -680,7 +487,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -717,19 +524,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-					
-					if percent>3 and percent<4:
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
+
+					if percent>3 and percent<4 or our_percent>3 and our_percent<4:
 						key = str(date.today())+str('DdddD4')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -738,7 +551,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -746,12 +559,6 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
@@ -764,43 +571,12 @@ def main():
 							else:
 								four_hours=0
 						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -809,10 +585,10 @@ def main():
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 							
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -825,7 +601,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -862,19 +638,26 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-					if percent>4 and percent<5:
+
+					if percent>4 and percent<5 or our_percent>4 and our_percent<5:
 						key = str(date.today())+str('ddddddd4')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -883,7 +666,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -891,29 +674,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -921,31 +686,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -953,10 +693,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -969,7 +710,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1006,20 +747,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
 							
-					elif percent>5 and percent<6:
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
+							
+					elif percent>5 and percent<6 or our_percent>5 and our_percent<6:
 					
 						key = str(date.today())+str('djdhdhjjdh')+str(csymbol)
 						if mc.get(key):
@@ -1029,7 +775,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1038,29 +784,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -1068,31 +796,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -1100,10 +803,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -1116,7 +820,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1153,19 +857,26 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-					elif percent>6 and percent<7:
+					elif percent>6 and percent<7 or our_percent>6 and our_percent<7:
 						key = str(date.today())+str('dddddiduiiudyud')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -1174,7 +885,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1183,29 +894,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -1213,31 +906,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -1245,11 +913,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
-							
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							timestamp=time.time()
 							ts_raw=timestamp
 							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
@@ -1260,7 +928,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1297,19 +965,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-					elif percent>7 and percent<8:
+					elif percent>7 and percent<8 or our_percent>7 and our_percent<8:
 						key = str(date.today())+str('djdhdhdddjjdh')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -1318,7 +992,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1327,61 +1001,18 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -1389,10 +1020,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -1405,7 +1036,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1442,20 +1073,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-
-					elif percent>8 and percent<9:
+					elif percent>8 and percent<9 or our_percent>8 and our_percent<9:
 						key = str(date.today())+str('djdhdhssjjdh')+str(csymbol)
 
 						if mc.get(key):
@@ -1466,7 +1102,7 @@ def main():
 
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1475,29 +1111,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -1505,31 +1123,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -1537,10 +1130,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -1553,7 +1147,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1590,20 +1184,27 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
 
-					elif percent>9 and percent<10:
+					elif percent>9 and percent<10 or our_percent>9 and our_percent<10:
 						key = str(date.today())+str('DALEdjdjjdjdRT3')+str(csymbol)
 						if mc.get(key):
 							dprint=2
@@ -1613,7 +1214,7 @@ def main():
 
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1622,61 +1223,18 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+								
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -1684,10 +1242,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -1700,7 +1258,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1737,20 +1295,26 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
 
-					elif percent>10 and percent<11:
+					elif percent>10 and percent<11 or our_percent>10 and our_percent<11:
 						key = str(date.today())+str('DALEddjdjjdjdRT3')+str(csymbol)
 
 						if mc.get(key):
@@ -1760,7 +1324,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1769,60 +1333,17 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
 
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
@@ -1832,10 +1353,10 @@ def main():
 
 							print(data)
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -1848,7 +1369,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -1885,20 +1406,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 	
-					elif percent>11 and percent<12:
+					elif percent>11 and percent<12 or our_percent>11 and our_percent<12:
 						key = str(date.today())+str('dddihsjkhhkjddhkj')+str(csymbol)
 
 						if mc.get(key):
@@ -1908,7 +1434,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -1917,61 +1443,18 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+														
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -1979,10 +1462,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 													
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -1995,7 +1479,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -2032,20 +1516,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 	
-					elif percent>12 and percent<13:
+					elif percent>12 and percent<13 or our_percent>12 and our_percent<13:
 						key = str(date.today())+str('DALEdjddddjjdjdRT3')+str(csymbol)
 
 						if mc.get(key):
@@ -2055,7 +1544,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -2064,60 +1553,17 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
 
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
@@ -2127,10 +1573,10 @@ def main():
 
 							print(data)
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -2143,7 +1589,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -2180,20 +1626,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-
-					elif percent>13 and percent<14:
+					elif percent>13 and percent<14 or our_percent>13 and our_percent<14:
 						key = str(date.today())+str('ddkdkkhjdkj33')+str(csymbol)
 
 						if mc.get(key):
@@ -2203,7 +1654,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -2211,60 +1662,17 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
 							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
 
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
@@ -2274,10 +1682,10 @@ def main():
 
 							print(data)
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 							
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -2290,7 +1698,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -2327,20 +1735,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 	
-					elif percent>14 and percent<15:
+					elif percent>14 and percent<15 or our_percent>14 and our_percent<15:
 						key = str(date.today())+str('dkdhjkdhkjdkjh333d')+str(csymbol)
 
 						if mc.get(key):
@@ -2350,7 +1763,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -2358,29 +1771,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -2388,31 +1783,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -2420,10 +1790,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 							
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -2436,7 +1806,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -2473,167 +1843,26 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
-
-					elif percent>16 and percent<17:
-						key = str(date.today())+str('adhjkhdjhjhkj')+str(csymbol)
-
-						if mc.get(key):
-							dprint=2
-						else:
-							det=int(1)
-							mc.set(key,1,3600)
-							rsi_3m=get_rsi(symbol,'3m')
-							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
-							mojo(symbol,close)
-							key=str(pair)+str("pkey-1hour")
-							if mc.get(key):
-								one_hours=mc.get(key)
-							else:
-								one_hours=0
-
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
-							key=str(pair)+str("pkey-3hour")
-							if mc.get(key):
-								three_hours=mc.get(key)
-							else:
-								three_hours=0
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
 							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
-							key=str(pair)+str("pkey-6hour")
-							if mc.get(key):
-								six_hours=mc.get(key)
-							else:
-								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
-							key=str(pair)+str("pkey-12hour")
-							if mc.get(key):
-								twelve_hours=mc.get(key)
-							else:
-								twelve_hours=0
-
-							print(data)
-							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
-													
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
-							
-							timestamp=time.time()
-							ts_raw=timestamp
-							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
-							date_today=str(date.today())
-							
-							alert_key_all=str(date_today)+'-ALERTS'
-							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
-							alert_list_today=str(date_today)+'-ALERTLIST'
-							symbol_ids=str(symbol)+'-IDS'
-							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
-							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
-							
-							#Push the whole Alert to redis
-							redis_server.rpush(alert_key_all,data)
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
-							
-							#Add Unique Coin to Alerts list for today
-							redis_server.sadd(alert_list_today,symbol)
-
-							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
-							redis_server.sadd(symbol_ids,ts_raw)
-							
-							detail_hash = {"date":str(date_today),
-							"date_time":str(date_time), 
-							"symbol":str(symbol), 
-							"alert_type":str(alert_type), 
-							"price":float(price), 
-							"percent":float(percent), 
-							"high":str(high), 
-							"low":str(low), 
-							"volume":int(qv),
-							"spread":float(spread),
-							"rsi_3mins":float(rsi_3m),
-							"rsi_5mins":float(rsi_5m),
-							"btc_price":str(btc_price),
-							"btc_percent":str(btc_percent),
-							"link":str(link),
-							}
-		
-							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
-							print(detail_hash)
-							redis_server.hmset(symbol_hash_detailed, detail_hash)
-
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
-
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
 	
-					elif percent>15 and percent<16:
+					elif percent>15 and percent<16 or our_percent>15 and our_percent<16:
 						key = str(date.today())+str('dkdjkdkh234')+str(csymbol)
 
 						if mc.get(key):
@@ -2644,7 +1873,7 @@ def main():
 
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							print(data)
 							mojo(symbol,close)
@@ -2654,61 +1883,18 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+														
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -2716,10 +1902,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -2732,7 +1918,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -2769,20 +1955,27 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
+
 
 	
-					elif percent>16 and percent<17:
+					elif percent>16 and percent<17 or our_percent>16 and our_percent<17:
 						key = str(date.today())+str('djdjhg3ujdhd')+str(csymbol)
 
 						if mc.get(key):
@@ -2793,7 +1986,7 @@ def main():
 
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -2802,61 +1995,18 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
+														
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
+					
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -2864,10 +2014,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -2880,7 +2030,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -2917,20 +2067,27 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
+
 
 	
-					elif percent>17 and percent<18:
+					elif percent>17 and percent<18 or our_percent>17 and our_percent<18:
 						key = str(date.today())+str('djdjhg3uddn39jdhd')+str(csymbol)
 
 						if mc.get(key):
@@ -2940,7 +2097,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -2948,60 +2105,17 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
 							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
 								six_hours=mc.get(key)
 							else:
 								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
 
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
@@ -3010,10 +2124,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -3026,7 +2141,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -3063,20 +2178,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-
-					elif percent>17 and percent<18:
+					elif percent>17 and percent<18 or our_percent>17 and our_percent<18:
 						key = str(date.today())+str('djdhdhh33')+str(csymbol)
 
 						if mc.get(key):
@@ -3086,7 +2206,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -3095,29 +2215,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -3125,31 +2227,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -3157,10 +2234,11 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
-													
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
+										
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -3173,7 +2251,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -3210,20 +2288,25 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-
-					elif percent>18 and percent<19:
+					elif percent>18 and percent<19 or our_percent>18 and our_percent<19:
 						key = str(date.today())+str('djdh8838383dhh33')+str(csymbol)
 
 						if mc.get(key):
@@ -3234,7 +2317,7 @@ def main():
 
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
@@ -3243,29 +2326,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -3273,31 +2338,6 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
@@ -3305,10 +2345,10 @@ def main():
 								twelve_hours=0
 
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -3321,7 +2361,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -3357,313 +2397,26 @@ def main():
 
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
-
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
-	
-
-					elif percent>18 and percent<19:
-						key = str(date.today())+str('djd383838hdhh33')+str(csymbol)
-
-						if mc.get(key):
-							dprint=2
-						else:
-							det=int(1)
-							mc.set(key,1,3600)
-							rsi_3m=get_rsi(symbol,'3m')
-							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
-							mojo(symbol,close)
-							key=str(pair)+str("pkey-1hour")
-							if mc.get(key):
-								one_hours=mc.get(key)
-							else:
-								one_hours=0
-
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
-							key=str(pair)+str("pkey-3hour")
-							if mc.get(key):
-								three_hours=mc.get(key)
-							else:
-								three_hours=0
 							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
 							
-							key=str(pair)+str("pkey-6hour")
-							if mc.get(key):
-								six_hours=mc.get(key)
-							else:
-								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
 
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
-							key=str(pair)+str("pkey-12hour")
-							if mc.get(key):
-								twelve_hours=mc.get(key)
-							else:
-								twelve_hours=0
-							print(data)
-							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
-														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
-							
-							timestamp=time.time()
-							ts_raw=timestamp
-							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
-							date_today=str(date.today())
-							
-							alert_key_all=str(date_today)+'-ALERTS'
-							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
-							alert_list_today=str(date_today)+'-ALERTLIST'
-							symbol_ids=str(symbol)+'-IDS'
-							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
-							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
-							
-							#Push the whole Alert to redis
-							redis_server.rpush(alert_key_all,data)
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
-							
-							#Add Unique Coin to Alerts list for today
-							redis_server.sadd(alert_list_today,symbol)
-
-							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
-							redis_server.sadd(symbol_ids,ts_raw)
-							
-							detail_hash = {"date":str(date_today),
-							"date_time":str(date_time), 
-							"symbol":str(symbol), 
-							"alert_type":str(alert_type), 
-							"price":float(price), 
-							"percent":float(percent), 
-							"high":str(high), 
-							"low":str(low), 
-							"volume":int(qv),
-							"spread":float(spread),
-							"rsi_3mins":float(rsi_3m),
-							"rsi_5mins":float(rsi_5m),
-							"btc_price":str(btc_price),
-							"btc_percent":str(btc_percent),
-							"link":str(link),
-							}
-		
-							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
-							print(detail_hash)
-							redis_server.hmset(symbol_hash_detailed, detail_hash)
-
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
-
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
-
-					elif percent>19 and percent<20:
-						key = str(date.today())+str('djd383dddd838hdhh33')+str(csymbol)
-
-						if mc.get(key):
-							dprint=2
-						else:
-							det=int(1)
-							mc.set(key,1,3600)
-							rsi_3m=get_rsi(symbol,'3m')
-							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
-
-							mojo(symbol,close)
-							key=str(pair)+str("pkey-1hour")
-							if mc.get(key):
-								one_hours=mc.get(key)
-							else:
-								one_hours=0
-
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
-							key=str(pair)+str("pkey-3hour")
-							if mc.get(key):
-								three_hours=mc.get(key)
-							else:
-								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
-							
-							key=str(pair)+str("pkey-6hour")
-							if mc.get(key):
-								six_hours=mc.get(key)
-							else:
-								six_hours=0
-						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
-							key=str(pair)+str("pkey-12hour")
-							if mc.get(key):
-								twelve_hours=mc.get(key)
-							else:
-								twelve_hours=0
-							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
-														
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
-							
-							timestamp=time.time()
-							ts_raw=timestamp
-							date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
-							date_today=str(date.today())
-							
-							alert_key_all=str(date_today)+'-ALERTS'
-							alert_key_symbol=str(date_today)+str(symbol)+'-ALERTS'
-							alert_list_today=str(date_today)+'-ALERTLIST'
-							symbol_ids=str(symbol)+'-IDS'
-							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
-							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
-							
-							#Push the whole Alert to redis
-							redis_server.rpush(alert_key_all,data)
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
-							
-							#Add Unique Coin to Alerts list for today
-							redis_server.sadd(alert_list_today,symbol)
-
-							#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
-							redis_server.sadd(symbol_ids,ts_raw)
-							
-							detail_hash = {"date":str(date_today),
-							"date_time":str(date_time), 
-							"symbol":str(symbol), 
-							"alert_type":str(alert_type), 
-							"price":float(price), 
-							"percent":float(percent), 
-							"high":str(high), 
-							"low":str(low), 
-							"volume":int(qv),
-							"spread":float(spread),
-							"rsi_3mins":float(rsi_3m),
-							"rsi_5mins":float(rsi_5m),
-							"btc_price":str(btc_price),
-							"btc_percent":str(btc_percent),
-							"link":str(link),
-							}
-		
-							print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
-							print(detail_hash)
-							redis_server.hmset(symbol_hash_detailed, detail_hash)
-
-							print("Pushing coin to todays alert list: "+str(symbol))
-							print(data)
-
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
-					elif percent>20:
+					elif percent>19 and percent<20 or our_percent>19 and our_percent<20:
 						key = str(date.today())+str('m0000ned')+str(csymbol)
 
 						if mc.get(key):
@@ -3673,7 +2426,7 @@ def main():
 							mc.set(key,1,3600)
 							rsi_3m=get_rsi(symbol,'3m')
 							rsi_5m=get_rsi(symbol,'5m')
-							rsi_stats="RSI 3M: "+str(rsi_3m)+" RSI 5M: "+str(rsi_5m)
+							rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 							mojo(symbol,close)
 							key=str(pair)+str("pkey-1hour")
 							if mc.get(key):
@@ -3681,29 +2434,11 @@ def main():
 							else:
 								one_hours=0
 
-							key=str(pair)+str("pkey-2hour")
-							if mc.get(key):
-								two_hours=mc.get(key)
-							else:
-								two_hours=0
-						
 							key=str(pair)+str("pkey-3hour")
 							if mc.get(key):
 								three_hours=mc.get(key)
 							else:
 								three_hours=0
-							
-							key=str(pair)+str("pkey-4hour")
-							if mc.get(key):
-								four_hours=mc.get(key)
-							else:
-								four_hours=0
-						
-							key=str(pair)+str("pkey-5hour")
-							if mc.get(key):
-								five_hours=mc.get(key)
-							else:
-								five_hours=0
 							
 							key=str(pair)+str("pkey-6hour")
 							if mc.get(key):
@@ -3711,41 +2446,17 @@ def main():
 							else:
 								six_hours=0
 						
-							key=str(pair)+str("pkey-5mins")
-
-							if mc.get(key):
-								five_mins=mc.get(key)
-							else:
-								five_mins=0
-						
-							key=str(pair)+str("pkey-10mins")
-							if mc.get(key):
-								ten_mins=mc.get(key)
-							else:
-								ten_mins=0
-						
-							key=str(pair)+str("pkey-15mins")
-							if mc.get(key):
-								fifteen_mins=mc.get(key)
-							else:
-								fifteen_mins=0	
-						
-							key=str(pair)+str("pkey-30mins")
-							if mc.get(key):
-								thirty_mins=mc.get(key)
-							else:
-								thirty_mins=0
-
 							key=str(pair)+str("pkey-12hour")
 							if mc.get(key):
 								twelve_hours=mc.get(key)
 							else:
 								twelve_hours=0
 							link='https://www.binance.com/en/trade/pro/'+csymbol
-							alert_type=' ::Price Alert Up: '+str(percent)+'%:: '					
+							alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 												
-							data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-							data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+							data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+							data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 							
 							timestamp=time.time()
 							ts_raw=timestamp
@@ -3758,7 +2469,7 @@ def main():
 							symbol_ids=str(symbol)+'-IDS'
 							symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-							data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+							data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 							#Push the whole Alert to redis
 							redis_server.rpush(alert_key_all,data)
@@ -3795,19 +2506,24 @@ def main():
 							print("Pushing coin to todays alert list: "+str(symbol))
 							print(data)
 
-							broadcast('693711905',data)	
-							broadcast('420441454',data)	
-							broadcast('446619309',data)	
-							broadcast('490148813',data)	
-							broadcast('110880375',data)	
-							broadcast('699448304',data)	
-							broadcast('593213791',data)	
-							broadcast('506872080',data)	
-							broadcast('543018578',data)
-							broadcast('503482955',data)
-							broadcast('429640253',data)
-
-						
+							if only_broadcast_up==1 and alert_direction=='UP':
+								broadcast_message=1
+							elif only_broadcast_up==0:
+								broadcast_message=1
+							
+							if broadcast_message==1:
+								broadcast('693711905',data)	
+								broadcast('420441454',data)	
+								broadcast('446619309',data)	
+								broadcast('490148813',data)	
+								broadcast('110880375',data)	
+								broadcast('699448304',data)	
+								broadcast('593213791',data)	
+								broadcast('506872080',data)	
+								broadcast('543018578',data)
+								broadcast('503482955',data)
+								broadcast('429640253',data)
+				
 					if det==1:
 						time.sleep(30)
 						if rsi_3m>53 and rsi_3m<65:
@@ -3817,10 +2533,10 @@ def main():
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
-								alert_type=' ::RSI ALERT 53 TO 65: '+str(percent)+'%:: '					
+								alert_type=':::PRICE ALERT '+str(alert_direction)+': '+str(percent)+'%:::'					
 							
-								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+								data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 								
 								timestamp=time.time()
 								ts_raw=timestamp
@@ -3833,7 +2549,7 @@ def main():
 								symbol_ids=str(symbol)+'-IDS'
 								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+								data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 								#Push the whole Alert to redis
 								redis_server.rpush(alert_key_all,data)
@@ -3870,18 +2586,23 @@ def main():
 								print("Pushing coin to todays alert list: "+str(symbol))
 								print(data)
 
-								broadcast('693711905',data)	
-								broadcast('420441454',data)	
-								broadcast('446619309',data)	
-								broadcast('490148813',data)	
-								broadcast('110880375',data)	
-								broadcast('699448304',data)	
-								broadcast('593213791',data)	
-								broadcast('506872080',data)	
-								broadcast('543018578',data)
-								broadcast('503482955',data)
-								broadcast('429640253',data)
-
+								if only_broadcast_up==1 and alert_direction=='UP':
+									broadcast_message=1
+								elif only_broadcast_up==0:
+									broadcast_message=1
+							
+								if broadcast_message==1:
+									broadcast('693711905',data)	
+									broadcast('420441454',data)	
+									broadcast('446619309',data)	
+									broadcast('490148813',data)	
+									broadcast('110880375',data)	
+									broadcast('699448304',data)	
+									broadcast('593213791',data)	
+									broadcast('506872080',data)	
+									broadcast('543018578',data)
+									broadcast('503482955',data)
+									broadcast('429640253',data)
 	
 						elif rsi_3m>80:
 							key = str(date.today())+str('rsi70')+str(csymbol)
@@ -3891,12 +2612,11 @@ def main():
 								key=str(pair)+str("pkey-1hour")
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
-								alert_type=' ::EXTREME RSI ALERT + '+str(percent)+'%:: '					
+								alert_type=':::EXTREME RSI ALERT + '+str(percent)+'%:::'					
 							
-								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
-								
-								
+								data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+								data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+									
 								timestamp=time.time()
 								ts_raw=timestamp
 								date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
@@ -3908,7 +2628,7 @@ def main():
 								symbol_ids=str(symbol)+'-IDS'
 								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+								data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 								#Push the whole Alert to redis
 								redis_server.rpush(alert_key_all,data)
@@ -3945,17 +2665,24 @@ def main():
 								print("Pushing coin to todays alert list: "+str(symbol))
 								print(data)
 
-								broadcast('693711905',data)	
-								broadcast('420441454',data)	
-								broadcast('446619309',data)	
-								broadcast('490148813',data)	
-								broadcast('110880375',data)	
-								broadcast('699448304',data)	
-								broadcast('593213791',data)	
-								broadcast('506872080',data)	
-								broadcast('543018578',data)
-								broadcast('503482955',data)
-								broadcast('429640253',data)
+								if only_broadcast_up==1 and alert_direction=='UP':
+									broadcast_message=1
+								elif only_broadcast_up==0:
+									broadcast_message=1
+							
+								if broadcast_message==1:
+									broadcast('693711905',data)	
+									broadcast('420441454',data)	
+									broadcast('446619309',data)	
+									broadcast('490148813',data)	
+									broadcast('110880375',data)	
+									broadcast('699448304',data)	
+									broadcast('593213791',data)	
+									broadcast('506872080',data)	
+									broadcast('543018578',data)
+									broadcast('503482955',data)
+									broadcast('429640253',data)
+
 
 						elif rsi_3m>70 and rsi_3m<80:
 							key = str(date.today())+str('rsi70')+str(csymbol)
@@ -3964,10 +2691,11 @@ def main():
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
-								alert_type=' ::RSI Alert + '+str(percent)+'%:: '					
+								alert_type=':::RSI Alert + '+str(percent)+'%::'					
 							
-								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+								data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 								
 								timestamp=time.time()
 								ts_raw=timestamp
@@ -3980,7 +2708,7 @@ def main():
 								symbol_ids=str(symbol)+'-IDS'
 								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+								data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 								#Push the whole Alert to redis
 								redis_server.rpush(alert_key_all,data)
@@ -4017,17 +2745,24 @@ def main():
 								print("Pushing coin to todays alert list: "+str(symbol))
 								print(data)
 
-								broadcast('693711905',data)	
-								broadcast('420441454',data)	
-								broadcast('446619309',data)	
-								broadcast('490148813',data)	
-								broadcast('110880375',data)	
-								broadcast('699448304',data)	
-								broadcast('593213791',data)	
-								broadcast('506872080',data)	
-								broadcast('543018578',data)
-								broadcast('503482955',data)
-								broadcast('429640253',data)
+								if only_broadcast_up==1 and alert_direction=='UP':
+									broadcast_message=1
+								elif only_broadcast_up==0:
+									broadcast_message=1
+							
+								if broadcast_message==1:
+									broadcast('693711905',data)	
+									broadcast('420441454',data)	
+									broadcast('446619309',data)	
+									broadcast('490148813',data)	
+									broadcast('110880375',data)	
+									broadcast('699448304',data)	
+									broadcast('593213791',data)	
+									broadcast('506872080',data)	
+									broadcast('543018578',data)
+									broadcast('503482955',data)
+									broadcast('429640253',data)
+
 
 						elif rsi_3m>80 and rsi<100:
 							key = str(date.today())+str('rsi70')+str(csymbol)
@@ -4036,10 +2771,11 @@ def main():
 							else:
 								mc.set(key,1,86400)
 								link='https://www.binance.com/en/trade/pro/'+csymbol
-								alert_type=' ::EXTREME RSI ALERT + '+str(percent)+'%:: '					
+								alert_type=':::EXTREME RSI ALERT + '+str(percent)+'%:::'					
 							
-								data_add="5 Mins: "+str(five_mins)+"%, 10 Mins: "+str(ten_mins)+"%, 15 Mins: "+str(fifteen_mins)+"%, 30 Mins: "+str(thirty_mins)+"%, 1H: "+str(one_hours)+str('%')+", 2H: "+str(two_hours)+str('%')+", 3H: "+str(three_hours)+str('%')+"\n4H: "+str(four_hours)+str('%')+", 5H: "+str(five_hours)+" 6H: "+str(six_hours)+", 12H: "+str(twelve_hours)+str('. %')
-								data=str(symbol)+str(alert_type)+"\nPrice: "+str(close)+' ('+str(percent)+'%)' + "\nSpread: "+str(pdiff)+"%\nBTC Price: "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+								data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+", <b>12H:</b> "+str(twelve_hours)+str('. %')
+								data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+
 								
 								timestamp=time.time()
 								ts_raw=timestamp
@@ -4052,7 +2788,7 @@ def main():
 								symbol_ids=str(symbol)+'-IDS'
 								symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 							
-								data=str(data)+"\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
+								data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
 								#Push the whole Alert to redis
 								redis_server.rpush(alert_key_all,data)
@@ -4082,17 +2818,23 @@ def main():
 								"link":str(link),
 								}
 
-								broadcast('693711905',data)	
-								broadcast('420441454',data)	
-								broadcast('446619309',data)	
-								broadcast('490148813',data)	
-								broadcast('110880375',data)	
-								broadcast('699448304',data)	
-								broadcast('593213791',data)	
-								broadcast('506872080',data)	
-								broadcast('543018578',data)
-								broadcast('503482955',data)
-								broadcast('429640253',data)
+								if only_broadcast_up==1 and alert_direction=='UP':
+									broadcast_message=1
+								elif only_broadcast_up==0:
+									broadcast_message=1
+							
+								if broadcast_message==1:
+									broadcast('693711905',data)	
+									broadcast('420441454',data)	
+									broadcast('446619309',data)	
+									broadcast('490148813',data)	
+									broadcast('110880375',data)	
+									broadcast('699448304',data)	
+									broadcast('593213791',data)	
+									broadcast('506872080',data)	
+									broadcast('543018578',data)
+									broadcast('503482955',data)
+									broadcast('429640253',data)
 
 				#else:	
 				#	print("no conditions met: "+str(symbol))
@@ -4100,7 +2842,6 @@ def main():
 while True:
 	try:
 		main()
-		print("Ended cycle\n")
 	except:
 		print("error")
-		time.sleep(30)
+	time.sleep(30)

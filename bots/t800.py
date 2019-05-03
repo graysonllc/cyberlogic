@@ -19,7 +19,7 @@ import subprocess
 import time
 import shlex
 import argparse
-
+import heapq
 config = configparser.ConfigParser()
 config.read('/root/akeys/b.conf')
 mysql_username=config['mysql']['MYSQL_USERNAME']
@@ -34,7 +34,9 @@ sys.path.append(root + '/python')
 	
 r = redis.Redis(host='localhost', port=6379, db=0)
 
-conn = redis.Redis('127.0.0.1')
+mc = memcache.Client(['127.0.0.1:11211'], debug=0)
+
+#conn = redis.Redis('127.0.0.1')
 
 #Name of bot PyCryptoBot
 
@@ -222,13 +224,21 @@ def get_ticker(ucoin):
 		return(ret)
 
 def start(bot, update):
-	help="I am T800, i can do the following commands:\n\n/market to get global market data, and market health!\n/ticker SYMBOL to get coin Ticker and ATH\n";
-	bot.send_message(chat_id=update.message.chat_id, text=help)
+	help="<b>I am T1000, i can do the following commands:</b>\n\n"
+	help=help+"/market to get global market data, and market health!\n"
+	help=help+"/ticker SYMBOL to get coin Ticker and ATH\n"
+	help=help+"/alerts #seconds to see alerts for last x seconds on pumps"
+	help=help+"/walls SYMBOL to see resistance / support levels or walls"
+	bot.send_message(chat_id=update.message.chat_id, text=help,parse_mode= 'HTML')
 	
 def help(bot, update):
-	help="I am T800, i can do the following commands:\n\n/market to get global market data, and market health!\n/ticker SYMBOL to get coin Ticker and ATH\n";
+	help="<b>I am T1000, i can do the following commands:</b>\n\n"
+	help=help+"/market to get global market data, and market health!\n"
+	help=help+"/ticker SYMBOL to get coin Ticker and ATH\n"
+	help=help+"/alerts #seconds to see alerts for last x seconds on pumps\n"
+	help=help+"/walls SYMBOL to see resistance / support levels or walls,parse_mode= 'HTML'"
 
-	bot.send_message(chat_id=update.message.chat_id, text=help)
+	bot.send_message(chat_id=update.message.chat_id, text=help,parse_mode= 'HTML')
 
 def ticker(bot, update, args):
 	coin=args[0]
@@ -243,6 +253,16 @@ def news(bot, update):
 	data=read_news()
 	bot.send_message(chat_id=update.message.chat_id, text=data)
 
+def fetch_order_book(exchange,symbol,type,qlimit):
+	limit = 1000
+	ret=exchange.fetch_order_book(symbol, limit)
+
+	if type=='bids':
+		bids=ret['bids']
+		return bids
+	else:
+		asks=ret['asks']
+		return asks
 
 def sell(bot, update,args):	
 	bid=update.message.from_user.id
@@ -282,6 +302,63 @@ def sell(bot, update,args):
 
 		bot.send_message(chat_id=update.message.chat_id, text=message)
 
+def fetch_last_order(exchange,symbol):
+	ret=exchange.fetch_closed_orders (symbol, 1);
+	if ret:
+		data=ret[-1]['info']
+		side=data['side']
+		price=float(data['price'])
+		return data
+	else:
+		print("returning: 0")
+		data=0
+		return data
+
+def cashout(bot, update, args):
+	
+	id=args[0]
+
+	revkey='REVERSE-'+str(id)
+	symbol=r.get(revkey).decode('utf-8')			
+	exchange=get_exchange()
+	t_key="TTT-"+str(symbol)
+	if mc.get(t_key):
+		buy_array=mc.get(t_key)
+	else:
+		#Cache last order in ram for 60 seconds to speed up api calls
+		buy_array=fetch_last_order(exchange,symbol)
+		mc.set(t_key,buy_array,300)
+
+	units=float(buy_array['executedQty'])
+
+	book=fetch_order_book(exchange,symbol,'bids',1)
+	sell_price=float(book[0][0])
+	
+	#Execute Sell Order
+	ret=exchange.create_order (symbol, 'limit', 'market', units)
+
+	bot_name=symbol
+	r.srem("botlist", bot_name)
+	r.delete(bot_name)
+	r.sadd("botlist-stopped", bot_name)
+	config = configparser.ConfigParser()
+	config_file='/home/crypto/cryptologic/pid-configs/init.ini'
+	config.read(config_file)
+	
+	bot_section='watcher:'+str(bot_name)
+	config.remove_section(bot_section)
+	
+	with open(config_file, 'w+') as configfile:
+		config.write(configfile)
+		print("Write Config File to: "+str(config_file))
+		print("Wrote: "+str(configfile))
+		key=str(symbol)+'-SYSTEM-STOPLOSS'
+		mc.delete(key)
+
+	message="<b>Cashed Out "+str(units)+" Of: "+str(symbol)+" At: "+str(sell_price)+"</b>"
+
+	bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
+
 
 def delete_bot(bot, update, args):
 	
@@ -306,6 +383,9 @@ def delete_bot(bot, update, args):
 	
 		#subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
 		#subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
+		
+		key=str(symbol)+'-SYSTEM-STOPLOSS'
+		mc.delete(key)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)
 
 def spawn_bot(symbol):
@@ -347,41 +427,41 @@ def add_bot(bot, update, args):
 	if var1=="confirm":
 	
 		redis_key="bconfig-tmp"
-		all=conn.hgetall(redis_key)
+		all=r.hgetall(redis_key)
 		
-		trading_on=conn.hget(redis_key,"trading_on")
+		trading_on=r.hget(redis_key,"trading_on")
 		trading_on=trading_on.decode('utf-8')
-		rsi_symbol=conn.hget(redis_key,"rsi_symbol")
+		rsi_symbol=r.hget(redis_key,"rsi_symbol")
 		rsi_symbol=rsi_symbol.decode('utf-8')
-		symbol=conn.hget(redis_key,"symbol")
+		symbol=r.hget(redis_key,"symbol")
 		symbol=symbol.decode('utf-8')
-		units=conn.hget(redis_key,"units")
+		units=r.hget(redis_key,"units")
 		units=units.decode('utf-8')
-		trade_from=conn.hget(redis_key,"trade_from")
+		trade_from=r.hget(redis_key,"trade_from")
 		trade_from=trade_from.decode('utf-8')
-		trade_to=conn.hget(redis_key,"trade_to")
+		trade_to=r.hget(redis_key,"trade_to")
 		trade_to=trade_to.decode('utf-8')
-		buy_pos=conn.hget(redis_key,"buy_pos")
+		buy_pos=r.hget(redis_key,"buy_pos")
 		buy_pos=buy_pos.decode('utf-8')
-		sell_pos=conn.hget(redis_key,"sell_pos")
+		sell_pos=r.hget(redis_key,"sell_pos")
 		sell_pos=sell_pos.decode('utf-8')
-		stoploss_percent=conn.hget(redis_key,"stoploss_percent")
+		stoploss_percent=r.hget(redis_key,"stoploss_percent")
 		stoploss_percent=stoploss_percent.decode('utf-8')
-		safeguard_percent=conn.hget(redis_key,"safeguard_percent")
+		safeguard_percent=r.hget(redis_key,"safeguard_percent")
 		safeguard_percent=safeguard_percent.decode('utf-8')
-		use_stoploss=conn.hget(redis_key,"use_stoploss")
+		use_stoploss=r.hget(redis_key,"use_stoploss")
 		use_stoploss=use_stoploss.decode('utf-8')
-		candle_size=conn.hget(redis_key,"candle_size")
+		candle_size=r.hget(redis_key,"candle_size")
 		candle_size=candle_size.decode('utf-8')
-		rsi_buy=conn.hget(redis_key,"rsi_buy")
+		rsi_buy=r.hget(redis_key,"rsi_buy")
 		rsi_buy=rsi_buy.decode('utf-8')
-		rsi_sell=conn.hget(redis_key,"rsi_sell")
+		rsi_sell=r.hget(redis_key,"rsi_sell")
 		rsi_sell=rsi_sell.decode('utf-8')
-		live=conn.hget(redis_key,"live")
+		live=r.hget(redis_key,"live")
 		live=live.decode('utf-8')
-		instant_market_buy=conn.hget(redis_key,"instant_market_buy")
+		instant_market_buy=r.hget(redis_key,"instant_market_buy")
 		instant_market_buy=instant_market_buy.decode('utf-8')
-		enable_buybacks=conn.hget(redis_key,"enable_buybacks")
+		enable_buybacks=r.hget(redis_key,"enable_buybacks")
 		enable_buybacks=enable_buybacks.decode('utf-8')
 		
 		bot_name=symbol
@@ -398,8 +478,7 @@ def add_bot(bot, update, args):
 			
 		redis_key="bconfig-"+symbol
 		
-		conn.hmset(redis_key, all)
-
+		r.hmset(redis_key, all)
 		ret="::Crypto Logic new bot: "+str(symbol)+" has been spawned on - "+str(running)
 		ret=ret+"\n\n::Exchange: "+trading_on
 		ret=ret+"\n::Trade Pair: "+str(symbol)
@@ -419,10 +498,20 @@ def add_bot(bot, update, args):
 
 		ret=ret+"\n\nIf you ever want to kill it issue /deletebot "+str(symbol)
 
+		bid=r.incr("bids")
+		r.hset(redis_key,"id",bid)
+
 		if instant_market_buy=="yes":
-			print("")
-			#exchange=get_exchange()
+			print("")	
+			exchange=get_exchange()
+			
+			#change from market buy to scraped order book buy
 			#ret=exchange.create_order (symbol, 'MARKET', 'BUY', units)
+
+			book=fetch_order_book(exchange,symbol,'asks',1)
+			buy_price=float(book[0][0])
+			ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)
+			
 			#print(ret)
 		spawn_bot(symbol)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)	
@@ -521,7 +610,7 @@ def add_bot(bot, update, args):
 			ksymbol=str(symbol)
 
 			redis_key="bconfig-tmp"
-			conn.hmset(redis_key, bot_config)
+			r.hmset(redis_key, bot_config)
 			bot.send_message(chat_id=update.message.chat_id, text=ret)
 
 def replace_last(source_string, replace_what, replace_with):
@@ -529,16 +618,54 @@ def replace_last(source_string, replace_what, replace_with):
     return head + replace_with + tail
 
 
+def walls(bot, update, args):
+	
+	symbol=args[0].upper()
+	exchange=get_exchange()
+	buy_book=fetch_order_book(exchange,symbol,'bids','1000')
+	sell_book=fetch_order_book(exchange,symbol,'asks','1000')
+
+	buy_dic={}
+	sell_dic={}
+	
+	for k,v in buy_book:
+		buy_dic[k]=v
+
+	for k,v in sell_book:
+		sell_dic[k]=v
+				
+	buy_walls=heapq.nlargest(10, buy_dic.items(), key=itemgetter(1))
+	sell_walls=heapq.nlargest(10, sell_dic.items(), key=itemgetter(1))
+	
+	message="<b>WALL INTEL:</b>\n\n"
+	
+	message=message+"<b>BUY WALLS ('SUPPORT')</b>\n"
+	
+	for k,v in sorted(buy_walls):
+		message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
+
+	message=message+"\n<b>SELL WALLS ('RESISTANCE')</b>'\n"
+	for k,v in sorted(sell_walls):
+		message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
+		
+	bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')
+
 def alerts(bot,update,args):
 	
 	first_price=0
 	
 	secs=int(args[0])
 
+	if len(args)>1:
+		pcoin=str(args[1].upper())
+	else:
+		pcoin=0
+		
 	ts_now = datetime.datetime.now()
 	ts_now_ts=float(time.mktime(ts_now.timetuple())	)
 	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
 
+	
 	print("TSN: ")
 	print(ts_now_ts)
 	print(ts_now_human)
@@ -564,6 +691,8 @@ def alerts(bot,update,args):
 	
 	for coin in pump_coins:
 		coin=coin.decode('utf-8')
+			
+		print("T800 DB: "+str(coin))
 		coin_ids=r.smembers(coin+'-IDS')
 		coin_ids=sorted(coin_ids)
 		message="<b>:: Alerts For: "+str(coin)+str('</b>')
@@ -578,7 +707,7 @@ def alerts(bot,update,args):
 			coin_hash=r.hgetall(rkey)
 			if coin_hash:
 				symbol=r.hget(rkey,"symbol").decode('utf-8')
-				ticker_symbol=symbol
+				ticker_symbol=symbol.upper()
 
 				if symbol.endswith('BTC'):
 					ticker_symbol = replace_last(ticker_symbol, 'BTC', '')
@@ -602,7 +731,16 @@ def alerts(bot,update,args):
 				elif symbol.endswith('PAX'):
 					ticker_symbol = replace_last(ticker_symbol, 'PAX', '')
 					ticker_symbol=ticker_symbol+'/PAX'	
-										
+				elif symbol.endswith('USDS'):
+					ticker_symbol = replace_last(ticker_symbol, 'USDS', '')
+					ticker_symbol=ticker_symbol+'/USDS'	
+
+				if pcoin and ticker_symbol!=pcoin:
+					#print(pcoin_nb)
+					#print(ticker_symbol)
+					continue
+				else:
+					print("Got it")
 				cidn=float(cid)
 	
 				msorted={}
@@ -692,12 +830,15 @@ def list_bots(bot, update, args):
 	
 	for bot_name in botlist:
 		bot_name=bot_name.decode('utf-8')
-		ts=float(r.get(bot_name))
-		running=datetime.fromtimestamp(ts).strftime("%A, %B %d, %Y %I:%M:%S")
-		txt="Bot: "+str(bot_name)+" Has been running since: "+str(running)
-		print(txt)
-		bot.send_message(chat_id=update.message.chat_id, text=txt)
-		
+		symbol=bot_name
+		print(symbol)
+			
+		bkey=str(symbol)+'-UPDATE'		
+		if r.get(bkey):
+			message=r.get(bkey).decode('utf-8')
+		else:
+			message=str(bot_name)
+		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
 		#bot.send_message(chat_id=update.message.chat_id, text=message)
 
 def stoploss(bot, update,args):	
@@ -810,7 +951,7 @@ def price(bot, update,args):
 		bot.send_message(chat_id=update.message.chat_id, text=message)
 
 dispatcher = updater.dispatcher
-start_handler = CommandHandler('start', start)
+start_handler = CommandHandler('start', help)
 help_handler = CommandHandler('help', help)
 ticker_handler = CommandHandler('ticker', ticker,pass_args=True)
 p_handler = CommandHandler('p', ticker,pass_args=True)
@@ -822,6 +963,8 @@ list_bots_handler=CommandHandler('listbots', list_bots,pass_args=True)
 add_bot_handler=CommandHandler('addbot', add_bot,pass_args=True)
 delete_bot_handler=CommandHandler('deletebot', delete_bot,pass_args=True)
 alerts_handler=CommandHandler('alerts', alerts,pass_args=True)
+cashout_handler = CommandHandler('cashout', cashout,pass_args=True)
+walls_handler = CommandHandler('walls', walls,pass_args=True)
 
 dispatcher.add_handler(delete_bot_handler)
 dispatcher.add_handler(add_bot_handler)
@@ -835,6 +978,7 @@ dispatcher.add_handler(sell_handler)
 dispatcher.add_handler(price_handler)
 dispatcher.add_handler(p_handler)
 dispatcher.add_handler(alerts_handler)
-
+dispatcher.add_handler(cashout_handler)
+dispatcher.add_handler(walls_handler)
 
 updater.start_polling()

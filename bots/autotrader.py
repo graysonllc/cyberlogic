@@ -305,12 +305,16 @@ def main(exchange,symbol,c):
 	high=float(ticker['high'])
 	low=float(ticker['low'])
 	
+	key=str(symbol)+'-LAST-PRICE'	
+	mc.set(key,close,86400)
+
 	lo_key="last_order-"+str(symbol)
 	#mc.delete(lo_key)
 	if mc.get(lo_key):
 		last_array=mc.get(lo_key)
 		last_price=float(last_array['price'])
 		last_type=last_array['side']
+	
 	else:
 		#Cache last order in ram for 60 seconds to speed up api calls
 		last_array=fetch_last_order(exchange,symbol)
@@ -437,6 +441,10 @@ def main(exchange,symbol,c):
 			broadcast(message)
 			print(ret)
 			message="Live Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh: "+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n"
+			if live=="yes":
+				ret=exchange.create_order (symbol, 'limit', 'buy', units, price)
+				print(ret)
+
 			log_redis(redis_trade_log,message,c)
 			print(message)
 		elif trade_action=="selling" and rsi>=rsi_sell:
@@ -544,11 +552,11 @@ c=0
 while True:
 	ret="meh"
 	
-	try:
-		ret=main(exchange,symbol,c)
-	except:
-		print("threw error sleeping for 3 seconds")
-		time.sleep(5)
+	#try:
+	ret=main(exchange,symbol,c)
+	#except:
+	#print("threw error sleeping for 3 seconds")
+	#time.sleep(5)
 	
 	if ret=="kill":
 		delete_bot(symbol)			
