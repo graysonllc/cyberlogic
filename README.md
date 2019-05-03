@@ -23,7 +23,7 @@ Python Modules:
 	talib
 	numpty
 	ccxt
-
+	heapq
 *Nix:
 
 	memcached
