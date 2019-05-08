@@ -53,8 +53,7 @@ def broadcast(chatid,text):
 	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
 	r=requests.get(url)
 	html = r.content
-	#print(html)
-	
+
 def fetch_prices(exchange, symbol):
 	ticker = exchange.fetch_ticker(symbol.upper())
 	return(ticker)
@@ -62,6 +61,7 @@ def fetch_prices(exchange, symbol):
 
 def fetch_last_order(exchange,symbol):
 	ret=exchange.fetch_closed_orders (symbol, 1,"");
+	#print(ret)
 	if ret:
 		data=ret[-1]['info']
 		side=data['side']
@@ -87,6 +87,7 @@ def get_price(pair,start_ts,end_ts):
 	status = r.status_code
 	print(status)
 	rsi_status=''
+	print(res)
 	trades = json.loads(res.decode('utf-8'))
 	data=trades[0]
 	price=float(data[4])
@@ -102,50 +103,6 @@ def diff_percent(low,high):
 
 	return(pdiff)
 
-def get_sentiment(symbol):
-	
-	exchange=get_exchange()	
-	ts_now = datetime.datetime.now()
-	ts_now_ts=int(time.mktime(ts_now.timetuple()))	
-
-	ts_5mins = ts_now - datetime.timedelta(seconds=300)
-	ts_5mins_ts=int(time.mktime(ts_5mins.timetuple()))
-	tsd=datetime.datetime.fromtimestamp(ts_5mins_ts).strftime("%Y-%m-%d %H:%M:%S")
-
-	buys=0
-	sells=0
-	total=0
-	slast_price=0
-	price_up=0
-	price_down=0
-
-	trades=exchange.fetchTrades (symbol)
-	for trade in trades:
-		side=trade['side']
-		sprice=float(trade['info']['p'])
-
-		if side=='buy':
-			buys+=1
-		else:
-			sells+=1
-
-		if slast_price>0 and sprice>slast_price:
-			price_up+=1
-	
-		if slast_price>0 and sprice<slast_price:
-			price_down+=1		
-
-		slast_price=sprice
-		total+=1	
-	
-	trade_total=price_up+price_down
-	price_up_ratio=100-abs(diff_percent(trade_total,price_up))
-	price_down_ratio=100-abs(diff_percent(trade_total,price_down))
-	buy_ratio=100-abs(diff_percent(total,buys))
-	sell_ratio=100-abs(diff_percent(total,sells))
-
-	dat="\n<b>:::SENTIMENT DATA:::\nBUYS:</b> "+str(buys)+' ('+str(buy_ratio)+'%)\n<b>SELLS:</b> '+str(sells)+' ('+str(sell_ratio)+'%)'+"\n"+'<b>PRICE UP RATIO:</b> '+str(price_up)+' ('+str(price_up_ratio)+'%)'
-	return(dat)
 def mojo(pair,price_now):
 
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -156,25 +113,6 @@ def mojo(pair,price_now):
 	ts_now_ts=int(time.mktime(ts_now.timetuple()))	
 	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
 
-	key=str(pair)+str("pkey-15mins")
-	if(mc.get(key)):
-		mc.delete(key)
-	
-	ts_15mins = ts_now - datetime.timedelta(seconds=900)
-	ts_15mins_ts=int(time.mktime(ts_15mins.timetuple()))
-	tsd=datetime.datetime.fromtimestamp(ts_15mins_ts).strftime("%Y-%m-%d %H:%M:%S")
-	
-	price_15_mins_ago=get_price(pair,str(ts_15mins_ts),str(ts_now_ts))
-	if price_15_mins_ago:
-		price_15_mins_ago=float(price_15_mins_ago)
-		print("P15MA")
-		print(price_15_mins_ago)
-		price_now=float(price_now)
-		price_diff=diff_percent(price_15_mins_ago,price_now)
-		if price_diff:		
-			mc.set(key,price_diff,86400)
-			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_15_mins_ago)+" Diff %: "+str(price_diff))
-	
 	key=str(pair)+str("pkey-1hour")
 	if(mc.get(key)):
 		mc.delete(key)
@@ -268,6 +206,7 @@ def get_rsi(pair,interval):
 	status = r.status_code
 	print("Status: "+str(status))
 	rsi_status=''
+	print("DBRSI: "+str(res))
 	trades = json.loads(res.decode('utf-8'))
 
 	lp=0
@@ -315,15 +254,33 @@ def main():
 		price_jump=0
 		coin=str(coin)
 		rsi=100
-		errors=0
 		btc_price=float(tickers['BTC/USDT']['close'])
 		btc_percent=float(tickers['BTC/USDT']['percentage'])
-		last_price=0
+
 		symbol=tickers[coin]['info']['symbol']
 		csymbol=coin
 		csymbol=csymbol.replace("/","_",1)
 		det=int(0)
 		today = str(date.today())
+		
+		if 'USDT' in symbol:
+			min_vol=1000000
+			skip=0
+		elif 'BTC' in symbol:
+			min_vol=500
+			skip=0
+		elif 'BNB' in symbol:
+			min_vol=50000
+			
+		key = str(date.today())+str('ALERTS-LAST_PRICE')+str(csymbol)
+		
+		last_price=0
+		if mc.get(key):
+			last_price=mc.get(key)
+			#print("ALERTS DB: GOT LP: "+str(last_price))
+		else:
+			first=1
+			
 		data=str()
 		row=tickers[coin]
 		symbol=row['info']['symbol']
@@ -336,40 +293,9 @@ def main():
 		dprint=1
 		pair=symbol
 		our_percent=0
-		rsi_3m=0
-		rsi_5m=0
-		price_jump=0
-		alerts=""
+		last_price=0
 		
-		if 'USDT' in symbol:
-			min_vol=1000000
-			skip=0
-		elif 'BTC' in symbol:
-			min_vol=500
-			skip=0
-		elif 'BNB' in symbol:
-			min_vol=50000
-			skip=0
-		elif 'ETH' in symbol:
-			min_vol=1000	
-			skip=0
-		if 'BCHSV' in symbol:
-
-			continue
-			
-		redis_key="ASLASTPRICE-"+symbol		
-		
-		if redis_server.get(redis_key):
-			last_price=float(redis_server.get(redis_key))
-			first=0
-			darr = [last_price,price]
-			for a, b in zip(darr[::1], darr[1::1]):
-				price_jump=100 * (b - a) / a
-				price_jump=round(price_jump,2)
-		else:
-			first=1
-			
-		if skip!=1 and qv >=min_vol and price>last_price:
+		if skip!=1 and qv >=min_vol:
 			
 			prices = [low,high]
 			for a, b in zip(prices[::1], prices[1::1]):
@@ -381,121 +307,78 @@ def main():
 
 			pair=symbol
 
-			if percent>1 and price_jump>0.25 and last_price>0 and price>last_price or percent>1 and first==1:
+			if last_price>0:
+				print("DBLP: "+str(last_price))
+				print("PRICE: "+str(price))
+				darr = [last_price,price]
+				for a, b in zip(darr[::1], darr[1::1]):
+					price_jump=100 * (b - a) / a
+					price_jump=round(price_jump,2)
 
-				print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
+			if percent>1 and price_jump>0.10 or percent>1 and first==1:
 	
-				key = str(date.today())+str('ALERTSDBN2')+str(csymbol)
+				key = str(date.today())+str('ALERTSDB')+str(csymbol)
 				if mc.get(key):
-					#print("Seen Ignoring it")
 					dprint=2
-				else:	
+				else:
+					print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
+	
 					det=int(1)
-					mc.set(key,1,60)
+					mc.set(key,1,120)
 					
 					try:
 						rsi_3m=get_rsi(symbol,'3m')
 						rsi_5m=get_rsi(symbol,'5m')
 						rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
-					except:
-						print("Rsi is the issue")
-						errors=1					
-					
-					try:
 						mojo(symbol,close)
-					except:
-						print("Error getting Trades")
-						errors=1
-									
-					print("DBERRORS: "+str(errors))		
-					key=str(pair)+str("pkey-1hour")
-					if mc.get(key):
-						one_hours=mc.get(key)
-					else:
-						one_hours=0
-			
-					key=str(pair)+str("pkey-3hour")
-					if mc.get(key):
-						three_hours=mc.get(key)
-					else:
-						three_hours=0
-							
-					key=str(pair)+str("pkey-6hour")
-					if mc.get(key):
-						six_hours=mc.get(key)
-					else:
-						six_hours=0
-						
-					key=str(pair)+str("pkey-12hour")
-					if mc.get(key):
-						twelve_hours=mc.get(key)
-					else:
-						twelve_hours=0
-				
-					key=str(pair)+str("pkey-15mins")
-					if mc.get(key):
-						fifteen_mins=mc.get(key)
-					else:
-						fifteen_mins=0
+														
+						key=str(pair)+str("pkey-1hour")
+						if mc.get(key):
+							one_hours=mc.get(key)
+						else:
+							one_hours=0
 
-					if errors==0 and one_hours>0.1 and float(price)>float(last_price):
-						link='https://www.binance.com/en/trade/pro/'+csymbol
-						alert_type=' PRICE ALERT: '+str(percent)+'%:::'					
+						key=str(pair)+str("pkey-3hour")
+						if mc.get(key):
+							three_hours=mc.get(key)
+						else:
+							three_hours=0
 							
-						data_add="<b>15M:</b> "+str(fifteen_mins)+str('%')+", <b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+"%, <b>12H:</b> "+str(twelve_hours)+str('%')
-						data='<b>:::'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+						key=str(pair)+str("pkey-6hour")
+						if mc.get(key):
+							six_hours=mc.get(key)
+						else:
+							six_hours=0
+						
+						key=str(pair)+str("pkey-12hour")
+						if mc.get(key):
+							twelve_hours=mc.get(key)
+						else:
+							twelve_hours=0
+				
+						link='https://www.binance.com/en/trade/pro/'+csymbol
+						alert_type=':::PRICE ALERT: '+str(percent)+'%:::'					
+							
+						data_add="<b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+"%, <b>12H:</b> "+str(twelve_hours)+str('%')
+						data='<b>'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)' + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 
 						timestamp=time.time()
 						ts_raw=timestamp
 						date_time=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 						date_today=str(date.today())							
-						alert_key_all=str(date_today)+'-NALERTddsSKdNNBNS'+str(symbol)
-						alert_list_today=str(date_today)+'-ALERTLIST'
-						symbol_ids=str(symbol)+'-IDS'
+						alert_key_all=str(date_today)+'-NALERTS'
+						alert_key_symbol=str(date_today)+str(symbol)+'-NALERTS'
+						alert_list_today=str(date_today)+'-NALERTLIST'
+						symbol_ids=str(symbol)+'-NIDS'
 						symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
-						
-						a=0
-						lp=0
 								
-						alerts=redis_server.lrange(alert_key_all,0,1000)
-												
-						adata=""
-						for alert in alerts:
-							alert=alert.decode('utf-8')
-							vDate, vPrice, vPer = alert.split("\t")
-							print(vDate)
-							if float(vPrice)>float(lp):
-								print(vPrice)
-								print("Over")
-								print(lp)
-								adata=adata+"\n"+str(vDate)+"\t"+str(vPrice)+"\t"+str(vPer)							
-								lp=vPrice
-							a=1
-						
-						alerts_key=str(symbol)+'-ALERTCYCLES'
-						alerts_today=redis_server.incr(alerts_key)
-						
-						sent=get_sentiment(coin)
-						print("Sentiment")
-						print(sent)
-						data=data+"\n"+str(sent)
-						if a==1:
-							data=data+"\n\n<b>TODAYS ALERTS:</b>"+str(adata)
-
-						data=str(data)+"\n\n<b>ALERTS TODAY:</b> "+str(alerts_today)
-
 						data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
-						print("DBBBBB")
-						print("LP: ")
-						print(last_price)
-						print("DBBBBB:")
-						print(price)
-						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(percent)+'%)'
+						pdata=str(date_time)+"\t"+str(price)+"\t"+str(percent)
 						redis_server.rpush(alert_key_all,pdata)
 														
 						redis_server.sadd(alert_list_today,symbol)
-						
+
 						#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
 						redis_server.sadd(symbol_ids,ts_raw)
 							
@@ -516,9 +399,6 @@ def main():
 						"link":str(link),
 						}
 		
-						
-
-		
 						print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
 						print(detail_hash)
 						redis_server.hmset(symbol_hash_detailed, detail_hash)
@@ -526,26 +406,28 @@ def main():
 						print("Pushing coin to todays alert list: "+str(symbol))
 						print(data)
 
-						redis_key="ASLASTPRICE-"+symbol		
-						redis_server.set(redis_key, str(price))
-						
-						print("DB RED: set "+str(redis_key)+' last_price'+str(price))
-						broadcast('693711905',data)	
-						broadcast('420441454',data)	
-						broadcast('446619309',data)	
-						broadcast('490148813',data)	
-						broadcast('110880375',data)	
-						broadcast('699448304',data)	
-						broadcast('593213791',data)	
-						broadcast('506872080',data)	
-						broadcast('543018578',data)
-						broadcast('503482955',data)
-						broadcast('429640253',data)
-						time.sleep(3)	
-e=0
+						key = str(date.today())+str('ALERTS-LAST_PRICE')+str(csymbol)
+						mc.set(key,price,86400)
+
+						#broadcast('693711905',data)	
+						#broadcast('420441454',data)	
+						#broadcast('446619309',data)	
+						#broadcast('490148813',data)	
+						#broadcast('110880375',data)	
+						#broadcast('699448304',data)	
+						#broadcast('593213791',data)	
+						#broadcast('506872080',data)	
+						#broadcast('543018578',data)
+						#broadcast('503482955',data)
+						time.sleep(10)	
+						#broadcast('429640253',data)
+					except:
+						print("threw error")
+						time.sleep(5)
+				
 while True:
 	#try:
 	main()
 	#except:
-	#e=1
-	time.sleep(10)
+	#print("error")
+	time.sleep(5)

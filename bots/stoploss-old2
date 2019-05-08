@@ -13,7 +13,6 @@ import requests
 import redis
 import configparser
 import datetime
-import heapq
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -30,7 +29,7 @@ botlist=r.smembers("botlist")
 print(":::STOPLOSS/MOVER Polling Running Bots\n")
 
 import ccxt  # noqa: E402
-
+	
 def get_exchange():
 	
 	#Read in our apikeys and accounts
@@ -49,18 +48,8 @@ def get_exchange():
     'verbose': False,  # switch it to False if you don't want the HTTP log
 	})
 	return(exchange)
-
-def fetch_order_book(exchange,symbol,type,qlimit):
-	limit = 1000
-	args='group: 1'
-	ret=exchange.fetch_order_book(symbol, limit)
-
-	if type=='bids':
-		bids=ret['bids']
-		return bids
-	else:
-		asks=ret['asks']
-		return asks
+	
+exchange=get_exchange()
 
 def fetch_last_order(exchange,symbol):
 	ret=exchange.fetch_closed_orders (symbol, 1);
@@ -74,31 +63,7 @@ def fetch_last_order(exchange,symbol):
 		data=0
 		return data
 
-def wall_magic(symbol):
-	
-	exchange=get_exchange()
-	buy_book=fetch_order_book(exchange,symbol,'bids','1000')
-	#print(buy_book)
-	buy_dic={}
-	
-	for k,v in buy_book:
-		buy_dic[k]=v
-		
-	buy_walls=heapq.nlargest(30, buy_dic.items(), key=itemgetter(1))
-	
-	bwl=[]
-	for k,v in sorted(buy_walls):
-		#message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
-		#print("Key: "+str(k)+" V: "+str(v))
-		bwl.append(k)	
-		
-	wall_stoploss=bwl[-3]
-	return(wall_stoploss)
 
-exchange=get_exchange()
-
-#new_stoploss=float(wall_magic(symbol))
-#sys.exit("whats")
 def loop_bots():
 	
 	exchange=get_exchange()
@@ -141,10 +106,8 @@ def loop_bots():
 
 		if buy_array['type']=='MARKET':
 			buy_price=float(buy_array['cummulativeQuoteQty'])/units
-			print("DB1: "+str(buy_price))
 		else:
 			buy_price=float(buy_array['price'])
-			print("DB2: "+str(buy_price))
 
 		profit_per_unit=market_price-buy_price
 		profit_total=float(profit_per_unit*units)
@@ -159,7 +122,8 @@ def loop_bots():
 		
 		investment_now=float(investment_now)
 		investment_now=round(investment_now,8)
-			
+		
+		
 		#Stoploss Stuff
 		original_stoploss_percent=r.hget(redis_key,'stoploss_percent').decode('utf-8')
 		original_stoploss_price_ded=buy_price/100*float(original_stoploss_percent)
@@ -195,30 +159,22 @@ def loop_bots():
 		
 
 		bkey=str(symbol)+'-UPDATE'
+		print("Setting BK: "+str(bkey))
 		r.set(bkey,message_tg)		
 	
 		print(message_tg)
 		
 		if profit_total>0:
 			
-			print("Debut MOFO;"+str(profit_total))
-			#sys.exit("die")
 			dec=market_price/100*float(original_stoploss_percent)
 			new_stoploss=market_price-dec	
 			new_stoploss=round(new_stoploss,8)
-
-			print("bf new code;")
-			new_stoploss=float(wall_magic(symbol))
-			print("NEW SL ADD: "+str(new_stoploss))
-			print(new_stoploss)
-			
 			key=str(symbol)+'-SYSTEM-STOPLOSS'
 			
 			if mc.get(key):
 				last_stoploss=mc.get(key)		
 				print("SLP LAST STOPLOSS: "+str(last_stoploss))
 				print("SLP NEW STOPLOSS: "+str(new_stoploss))
-				
 				if new_stoploss>last_stoploss:
 					ikey=str(bot_id)+'-GOALPOSTS'
 					cycles=r.incr(ikey)
@@ -227,8 +183,8 @@ def loop_bots():
 					r.set(gkey,new_stoploss)				
 	
 					print(str(symbol)+":::STOPLOSS/MOVER MOVED GOAL POST: "+str(cycles)+" Times!\n")
-					#key=str(symbol)+'-SYSTEM-STOPLOSS'
-					#mc.set(key,new_stoploss,864000)		
+					key=str(symbol)+'-SYSTEM-STOPLOSS'
+					mc.set(key,new_stoploss,864000)		
 
 					print("Goal Post Move Set :"+str(key)+" Stoploss to "+str(new_stoploss))
 					mc.set(key,new_stoploss,86400)	
@@ -238,7 +194,6 @@ def loop_bots():
 					r.hset(ckey, 'checkpoint_stoploss',new_stoploss)
 			else:
 				print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
-				key=str(symbol)+'-SYSTEM-STOPLOSS'
 				mc.set(key,original_stoploss_price,86400)	
 
 while True:
