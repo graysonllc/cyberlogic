@@ -212,7 +212,7 @@ def mojo(pair,price_now):
 		if price_diff:		
 			mc.set(key,price_diff,86400)
 			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 3 Hour Ago: "+str(tsd)+" : "+str(price_3_hours_ago)+" Diff %: "+str(price_diff))
-	
+			threee_hour_up_perc=price_diff
 	key=str(pair)+str("pkey-6hour")
 	if(mc.get(key)):
 		mc.delete(key)
@@ -475,6 +475,14 @@ def main():
 						alerts_key=str(symbol)+'-ALERTCYCLES'
 						alerts_today=redis_server.incr(alerts_key)
 						
+						#Lets also make a memcache # of alerts so we can have auto expiry time, lets set expiry to two hours "7200 seconds rolling"
+						mckey=str(pair)+str("MCALERTS")
+						mc.incr(mckey,7200)
+						
+						grab_mc_counter=mc.get(mckey)
+						if grab_mc_counter>=5 and percent>3 and three_hours>=5:
+							mooning=str(symbol)+'-MOONING'
+						
 						sent=get_sentiment(coin)
 						print("Sentiment")
 						print(sent)
@@ -515,9 +523,6 @@ def main():
 						"btc_percent":str(btc_percent),
 						"link":str(link),
 						}
-		
-						
-
 		
 						print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
 						print(detail_hash)
