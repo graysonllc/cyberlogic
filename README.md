@@ -30,3 +30,4 @@ Python Modules:
 	circus
 	redis
 	mysql or mariadb
+	python3.6 or above
