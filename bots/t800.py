@@ -41,7 +41,7 @@ mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 #Name of bot PyCryptoBot
 
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-print(telegram_id)
+#print(telegram_id)
 updater = Updater(token=telegram_id)
 
 logging.basicConfig(level=logging.DEBUG,
@@ -254,8 +254,8 @@ def news(bot, update):
 	bot.send_message(chat_id=update.message.chat_id, text=data)
 
 def fetch_order_book(exchange,symbol,type,qlimit):
-	limit = 1000
-	ret=exchange.fetch_order_book(symbol, limit)
+	#limit = 1000
+	ret=exchange.fetch_order_book(symbol, qlimit)
 
 	if type=='bids':
 		bids=ret['bids']
@@ -382,11 +382,12 @@ def delete_bot(bot, update, args):
 		print("Wrote: "+str(configfile))
 	
 		#subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
-		#subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
 		
 		key=str(symbol)+'-SYSTEM-STOPLOSS'
 		mc.delete(key)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)
+		
+		subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
 
 def spawn_bot(symbol):
 	
@@ -463,7 +464,13 @@ def add_bot(bot, update, args):
 		instant_market_buy=instant_market_buy.decode('utf-8')
 		enable_buybacks=r.hget(redis_key,"enable_buybacks")
 		enable_buybacks=enable_buybacks.decode('utf-8')
-		
+		enable_safeguard=r.hget(redis_key,"enable_safeguard")
+		enable_safeguard=enable_safeguard.decode('utf-8')
+		force_buy=r.hget(redis_key,"force_buy")
+		force_buy=force_buy.decode('utf-8')
+		force_sell=r.hget(redis_key,"force_sell")
+		force_sell=force_sell.decode('utf-8')
+	
 		bot_name=symbol
 		
 		r.sadd("botlist", bot_name)
@@ -501,6 +508,16 @@ def add_bot(bot, update, args):
 		bid=r.incr("bids")
 		r.hset(redis_key,"id",bid)
 
+		if force_buy=="yes":
+			mc = memcache.Client(['127.0.0.1:11211'], debug=0)	
+			key=symbol+"-FORCE-BUY"
+			mc.set(key,force_buy,86400)			
+
+		elif force_sell=="yes":
+			mc = memcache.Client(['127.0.0.1:11211'], debug=0)	
+			key=symbol+"-FORCE-SELL"
+			mc.set(key,force_sell,86400)			
+
 		if instant_market_buy=="yes":
 			print("")	
 			exchange=get_exchange()
@@ -531,6 +548,7 @@ def add_bot(bot, update, args):
 		parser.add_argument('--sell_pos', help='Sell book position to clone')
 		parser.add_argument('--use_stoploss', help='1 to enable, 0 to disable')
 		parser.add_argument('--candle_size', help='i.e 5m for 5 minutes')
+		parser.add_argument('--enable_safeguard', help='If enabled it will never buy back more expensive than last sell')
 		parser.add_argument('--safeguard_percent', help='safeguard percent if buying back cheaper')
 		parser.add_argument('--stoploss_percent', help='stoploss percent')
 		parser.add_argument('--rsi_buy', help='Rsi Number under to trigger a buy, i.e 20')
@@ -538,6 +556,8 @@ def add_bot(bot, update, args):
 		parser.add_argument('--live', help='1 for Live trading, 0 for dry testing.')
 		parser.add_argument('--instant_market_buy', help='To make the first buy instant @ market price')
 		parser.add_argument('--enable_buybacks', help='If enabled will buy back cheaper after a stoploss sell')
+		parser.add_argument('--force_buy', help='If enabled will force a buy on the first trade, only needed really for an rsi buy where u already hold units')
+		parser.add_argument('--force_sell', help='If enabled will force a sell on the first trade, only needed really for an rsi sell where u already hold units')
 
 		pargs = parser.parse_args(shlex.split(argstr))
 
@@ -559,6 +579,9 @@ def add_bot(bot, update, args):
 		bot_name=str(trading_pair)
 		instant_market_buy=str(pargs.instant_market_buy)
 		enable_buybacks=str(pargs.enable_buybacks)
+		enable_safeguard=str(pargs.enable_safeguard)
+		force_buy=str(pargs.force_buy)
+		force_sell=str(pargs.force_sell)
 
 		symbol=bot_name
 		if r.sismember("botlist", trading_pair):
@@ -585,6 +608,9 @@ def add_bot(bot, update, args):
 			ret=ret+"\n::Instant Market Buy: "+str(instant_market_buy)
 			ret=ret+"\n::TA Candle Size: "+candle_size
 			ret=ret+"\n::Enable Buybacks: "+str(enable_buybacks)
+			ret=ret+"\n::Enable Safeguard: "+str(enable_safeguard)
+			ret=ret+"\n::Force Buy: "+str(force_buy)
+			ret=ret+"\n::Force Sell: "+str(force_sell)
 
 			ret=ret+"\n\nIf you have reviewed all settings carefully reply with /addbot confirm to execute!"
 
@@ -604,6 +630,9 @@ def add_bot(bot, update, args):
 			"rsi_sell":float(rsi_sell),
 			"instant_market_buy":str(instant_market_buy),
 			"enable_buybacks":str(enable_buybacks),
+			"enable_safeguard":str(enable_safeguard),
+			"force_buy":str(force_buy),
+			"force_sell":str(force_sell),
 			"live":str(live)}
 			
 			print(bot_config)
@@ -622,20 +651,22 @@ def walls(bot, update, args):
 	
 	symbol=args[0].upper()
 	exchange=get_exchange()
-	buy_book=fetch_order_book(exchange,symbol,'bids','1000')
-	sell_book=fetch_order_book(exchange,symbol,'asks','1000')
+	buy_book=fetch_order_book(exchange,symbol,'bids','500')
+	sell_book=fetch_order_book(exchange,symbol,'asks','500')
 
 	buy_dic={}
 	sell_dic={}
 	
 	for k,v in buy_book:
 		buy_dic[k]=v
+		print("Key: "+str(k)+" v: "+str(v))
 
 	for k,v in sell_book:
 		sell_dic[k]=v
 				
-	buy_walls=heapq.nlargest(10, buy_dic.items(), key=itemgetter(1))
-	sell_walls=heapq.nlargest(10, sell_dic.items(), key=itemgetter(1))
+	buy_walls=heapq.nlargest(20, buy_dic.items(), key=itemgetter(1))
+	print(buy_walls)
+	sell_walls=heapq.nlargest(20, sell_dic.items(), key=itemgetter(1))
 	
 	message="<b>WALL INTEL:</b>\n\n"
 	

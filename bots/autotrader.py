@@ -14,6 +14,7 @@ import redis
 import configparser
 from datetime import datetime
 import subprocess
+import heapq
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -40,6 +41,49 @@ def log_redis(redis_key,message,c):
 	print("Writing to redis: "+str(redis_key))
 	print(message)
 	r.rpush(redis_key,message)
+
+def fetch_wall_book(exchange,symbol,type,qlimit):
+	limit = 1000
+	ret=exchange.fetch_order_book(symbol, limit)
+
+	if type=='bids':
+		bids=ret['bids']
+		return bids
+	else:
+		asks=ret['asks']
+		return asks
+
+def walls(symbol):
+	
+	symbol=symbol.upper()
+	exchange=get_exchange()
+	buy_book=fetch_wall_book(exchange,symbol,'bids','500')
+	sell_book=fetch_wall_book(exchange,symbol,'asks','500')
+
+	buy_dic={}
+	sell_dic={}
+	
+	for k,v in buy_book:
+		buy_dic[k]=v
+
+	for k,v in sell_book:
+		sell_dic[k]=v
+				
+	buy_walls=heapq.nlargest(20, buy_dic.items(), key=itemgetter(1))
+	sell_walls=heapq.nlargest(20, sell_dic.items(), key=itemgetter(1))
+	
+	message="<b>INFO:: - "+str(symbol)+"WALL INTEL:</b>\n\n"
+	
+	message=message+"<b>BUY WALLS ('SUPPORT')</b>\n"
+	
+	for k,v in sorted(buy_walls):
+		message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
+
+	message=message+"\n<b>SELL WALLS ('RESISTANCE')</b>'\n"
+	for k,v in sorted(sell_walls):
+		message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
+		
+	broadcast(message)
 
 def get_exchange():
 	
@@ -91,19 +135,24 @@ def delete_bot(symbol):
 		print("Write Config File to: "+str(config_file))
 		print("Wrote: "+str(configfile))
 	
-	subprocess.run(["/usr/bin/circusctl", "restart"])
+	subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
 
 def broadcast(text):
 
 	config = configparser.ConfigParser()
 	config.read('/root/akeys/b.conf')
 	telegram_id=config['binance']['TELEGRAM_ID']
+	chatid=config['binance']['TRADES_CHANNEL']
+	print(chatid)
 	token = telegram_id
-	chatid = "@ntradez"
-	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+text
+	timestamp=time.time()
+	date_time=datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+	text="<b>"+str(date_time)+"</b>\t"+str(text)
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+text+"&parse_mode=HTML"
 	r=requests.get(url)
 	html = r.content
-
+	print(html)
+	
 def fetch_prices(exchange, symbol):
 	ticker = exchange.fetch_ticker(symbol.upper())
 	return(ticker)
@@ -159,7 +208,7 @@ def get_rsi(pair,interval):
 				fin.append(chkput)
 		
 		rsi=float(fin[-1])
-
+		rsi=round(rsi)
 		return(rsi)
 	except:
 		print("rsi is the problem")
@@ -213,7 +262,7 @@ def main(exchange,symbol,c):
 	redis_trade_log="TRADELOG-"+symbol
 	redis_key="bconfig-"+symbol
 	redis_rsi_log="RSILOG-"+symbol
-	
+	ret=0
 	trading_on=conn.hget(redis_key,"trading_on")
 	trading_on=trading_on.decode('utf-8')
 	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
@@ -227,7 +276,7 @@ def main(exchange,symbol,c):
 	trade_to=conn.hget(redis_key,"trade_to")
 	trade_to=trade_to.decode('utf-8')
 	buy_pos=conn.hget(redis_key,"buy_pos")
-	buy_pos=buy_pos.decode('utf-8')
+	buy_pos=buy_pos.decode('utf-8')	
 	sell_pos=conn.hget(redis_key,"sell_pos")
 	sell_pos=sell_pos.decode('utf-8')
 	stoploss_percent=conn.hget(redis_key,"stoploss_percent")
@@ -244,7 +293,8 @@ def main(exchange,symbol,c):
 	rsi_sell=rsi_sell.decode('utf-8')
 	live=conn.hget(redis_key,"live")
 	live=live.decode('utf-8')
-	
+	enable_safeguard=conn.hget(redis_key,"enable_safeguard")
+	enable_safeguard=enable_safeguard.decode('utf-8')
 	enable_buybacks=conn.hget(redis_key,"enable_buybacks")
 	if enable_buybacks:
 		enable_buybacks=enable_buybacks.decode('utf-8')
@@ -254,8 +304,9 @@ def main(exchange,symbol,c):
 	safeguard_percent=float(safeguard_percent)
 	use_stoploss=str(use_stoploss)
 	units=float(units)
-	
-	message="Exchange: "+trading_on+"\tExchange: "+trading_on+"\tTrade Pair: "+str(symbol)+"\tUnits: "+str(units)+"\tBuy Book Scrape Position: "+str(buy_pos)+"\tSell Book Scrape Position: "+str(sell_pos)+"\tRSI Buy: "+str(rsi_buy)+"\tRSI Sell: "+str(rsi_sell)+"\tStoploss Percent: "+str(stoploss_percent)+"\tSafeguard Percent: "+str(safeguard_percent)+"\tCandle Size: "+candle_size+"\tStoploss Enabled: "+str(use_stoploss)+"\tLive Trading Enabled: "+live
+	sell_pos=int(sell_pos)
+	buy_pos=int(buy_pos)
+	message="Exchange: "+trading_on+"\tExchange: "+trading_on+"\tTrade Pair: "+str(symbol)+"\tUnits: "+str(units)+"\tBuy Book Scrape Position: "+str(buy_pos)+"\tSell Book Scrape Position: "+str(sell_pos)+"\tRSI Buy: "+str(rsi_buy)+"\tRSI Sell: "+str(rsi_sell)+"\tStoploss Percent: "+str(stoploss_percent)+"\tSafeguard Percent: "+str(safeguard_percent)+"\tEnable Safeguard: "+str(enable_safeguard)+"\tCandle Size: "+candle_size+"\tStoploss Enabled: "+str(use_stoploss)+"\tLive Trading Enabled: "+live
 
 	if c==0:
 		log_redis(redis_log,message,c)
@@ -338,6 +389,17 @@ def main(exchange,symbol,c):
 	else:
 		trade_action='buying'
 
+	#Added forcebuy usefull if u wanna force a buy on rsi without instant buy @ market
+	fbkey=symbol+"-FORCE-BUY"
+	if mc.get(fbkey):
+		trade_action='buying'
+		mc.delete(fbkey)
+
+	fskey=symbol+"-FORCE-SELL"
+	if mc.get(fskey):
+		trade_action='selling'
+		mc.delete(fskey)
+
 	if open_order:
 		for order in orders:
 			order_symbol=order['info']['symbol']
@@ -349,13 +411,8 @@ def main(exchange,symbol,c):
 				open_fee=order['fee']
 				order_id=order['info']['orderId']
 				
-				message="Theres an open order\nType: " +str(open_type)+ "\nPrice: "+str(open_price)+ "\nFilled: "+str(open_filled)+"/"+str(open_remaining)+"\nRSI is: "+str(rsi)+" Order ID: "+str(order_id)
-								
-				log_redis(redis_log,message,c)
-				print(message)
-
-				message="Current Ticker Values- Last: "+str(last)+" Bid: "+str(bid)+" Ask: "+str(ask)
-
+				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+ "\n<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>RSI:</b> "+str(rsi)+" <b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
+				broadcast(message)
 				log_redis(redis_log,message,c)
 				print(message)
 
@@ -392,18 +449,17 @@ def main(exchange,symbol,c):
 
 							mc.delete(key)
 							print("creating stoploss order: "+str(sell_price))
-							message="Alert Stoploss Hit line 260, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
+							message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b>, <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
 							broadcast(message)
 							print(message)
 							log_redis(redis_trade_log,message,c)
 							
 							if live=="yes":
 								ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
+								broadcast(message)
 
-							broadcast(message)
 							message="Killing Bot"
 							log_redis(redis_trade_log,message,c)
-							#IF enable buybacks isn't set to one fuck off and die cunt
 							if enable_buybacks=='no':
 								delete_bot(symbol)			
 								print("killing bot/deleting it")	
@@ -428,14 +484,20 @@ def main(exchange,symbol,c):
 
 		if trade_action=="buying" and rsi<=rsi_buy or trade_action=="buying" and ignore_rsi==1 or trade_action=="buying" and got_key==1:
 			
-			safeguard=last_price/100*safeguard_percent
-			price=last_price-safeguard
-
+			if enable_safeguard=='yes':
+				safeguard=last_price/100*safeguard_percent
+				price=last_price-safeguard
+			else:
+				book=fetch_order_book(exchange,symbol,'bids',1)
+				price=float(book[buy_pos][0])
+				
 			exchange_cut=price/100*0.007500
 			price=price-exchange_cut
 			print("Making buyorder for "+str(units)+" price: "+str(price)+"\n")
 			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
-			message="Making Buy Order For "+str(units)+" Price: "+str(price)+" Last Sell Price: "+str(last_price)
+	
+	
+			message="<b>ALERT:: - "+str(symbol)+" BUYING</b> "+str(units)+"UNITS\t<b>BUY @:</b> "+str(price)+"\t<b>LAST SELL @:</b> "+str(last_price)
 			log_redis(redis_trade_log,message,c)
 
 			broadcast(message)
@@ -451,10 +513,9 @@ def main(exchange,symbol,c):
 			book=fetch_order_book(exchange,symbol,'asks',1)
 			price=float(book[sell_pos][0])
 		
-			if price < last_price:
+			if price < last_price and enable_safeguard=='yes':
 				message=str(price)+" is under: "+str(last_price)
 				log_redis(redis_trade_log,message,c)
-
 				safeguard=last_price/100*safeguard_percent
 				price=last_price+safeguard
 				message="Using safeguard price is now: "+str(price)
@@ -466,7 +527,8 @@ def main(exchange,symbol,c):
 			
 			print("Making sell order for "+str(units)+" price: "+str(price)+"\n")
 			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
-			message="Making Sell Order For "+str(units)+" Price: "+str(price)+" Last Buy Price: "+str(last_price)+str(add)
+
+			message="<b>ALERT:: - "+str(symbol)+" SELLING</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(price)+"\t<b>LAST BUY:</b> "+str(last_price)
 			broadcast(message)
 			log_redis(redis_trade_log,message,c)
 
@@ -510,7 +572,8 @@ def main(exchange,symbol,c):
 						sell_price=float(book[0][0])
 
 						print("creating stoploss order: "+str(sell_price))
-						message="Alert Stoploss Hit 364, Making Sell Order For: "+str(units)+" Price: "+str(sell_price)+" Last Buy Price"+str(last_price)
+						message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b> <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
+
 						broadcast(message)
 						log_redis(redis_trade_log,message,c)
 
@@ -528,9 +591,16 @@ def main(exchange,symbol,c):
 						
 						key=str(symbol)+'-SL'	
 						mc.set(key,1,86400)			
+
 		
-			message="The market Conditions are not right for a buy or sell rsi is: "+str(rsi)
-			log_redis(redis_log,message,c)
+			message="<b>ALERT:: - "+str(symbol)+"</b>\nThe market Conditions are not right for a buy or sell <b>RSI is:</b> "+str(rsi)+" Our next action is -> "+str(trade_action)
+			print(message)
+			tm_key=str(symbol)+'-TMPS'	
+			if not (mc.get(tm_key)):
+				mc.set(tm_key,1,600)			
+				broadcast(message)
+				walls(symbol)
+				log_redis(redis_log,message,c)
 
 		return(1)
 
@@ -547,18 +617,26 @@ print(symbol)
 if r.sismember('botlist',symbol)==0:
 	delete_bot(symbol)			
 	sys.exit("bot not in list")
+	print("bot not in list")
 c=0
+
+message="<b>ALERT:: SPAWNED A NEW BOT FOR: "+str(symbol)+"</b>"
+print(message)
+#broadcast(message)
 
 while True:
 	ret="meh"
 	
 	#try:
+	#print("tying")
 	ret=main(exchange,symbol,c)
 	#except:
-	#print("threw error sleeping for 3 seconds")
-	#time.sleep(5)
+	#	print("threw error sleeping for 3 seconds")
+	#	time.sleep(5)
 	
 	if ret=="kill":
+		print("killing")
 		delete_bot(symbol)			
 		sys.exit("die")
 	c+=1
+	time.sleep(0.5)

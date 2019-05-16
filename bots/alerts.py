@@ -66,9 +66,9 @@ def fetch_last_order(exchange,symbol):
 		data=ret[-1]['info']
 		side=data['side']
 		price=data['price']
-		print("returning: 1")
+		#print("returning: 1")
 	else:
-		print("returning: 0")
+		#print("returning: 0")
 		data=0
 	return data
 
@@ -81,11 +81,11 @@ def get_price(pair,start_ts,end_ts):
 	#try:
 	start_ts=start_ts+"000"
 	url="https://api.binance.com/api/v1/klines?symbol="+pair+"&startTime="+str(start_ts)+"&interval=1m"
-	print(url)
+	#print(url)
 	r=requests.get(url)
 	res = (r.content.strip())
 	status = r.status_code
-	print(status)
+	#print(status)
 	rsi_status=''
 	trades = json.loads(res.decode('utf-8'))
 	data=trades[0]
@@ -167,13 +167,13 @@ def mojo(pair,price_now):
 	price_15_mins_ago=get_price(pair,str(ts_15mins_ts),str(ts_now_ts))
 	if price_15_mins_ago:
 		price_15_mins_ago=float(price_15_mins_ago)
-		print("P15MA")
-		print(price_15_mins_ago)
+		#print("P15MA")
+		#print(price_15_mins_ago)
 		price_now=float(price_now)
 		price_diff=diff_percent(price_15_mins_ago,price_now)
 		if price_diff:		
 			mc.set(key,price_diff,86400)
-			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_15_mins_ago)+" Diff %: "+str(price_diff))
+			#print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_15_mins_ago)+" Diff %: "+str(price_diff))
 	
 	key=str(pair)+str("pkey-1hour")
 	if(mc.get(key)):
@@ -186,13 +186,13 @@ def mojo(pair,price_now):
 	price_1_hours_ago=get_price(pair,str(ts_1hour_ts),str(ts_now_ts))
 	if price_1_hours_ago:
 		price_1_hours_ago=float(price_1_hours_ago)
-		print("P1HA")
-		print(price_1_hours_ago)
+		#print("P1HA")
+		#print(price_1_hours_ago)
 		price_now=float(price_now)
 		price_diff=diff_percent(price_1_hours_ago,price_now)
 		if price_diff:		
 			mc.set(key,price_diff,86400)
-			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_1_hours_ago)+" Diff %: "+str(price_diff))
+			#print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_1_hours_ago)+" Diff %: "+str(price_diff))
 	
 	key=str(pair)+str("pkey-3hour")
 	if(mc.get(key)):
@@ -205,13 +205,13 @@ def mojo(pair,price_now):
 	price_3_hours_ago=get_price(pair,str(ts_3hour_ts),str(ts_now_ts))
 	if price_3_hours_ago:
 		price_3_hours_ago=float(price_3_hours_ago)
-		print("P3HA")
-		print(price_3_hours_ago)
+		#print("P3HA")
+		#print(price_3_hours_ago)
 		price_now=float(price_now)
 		price_diff=diff_percent(price_3_hours_ago,price_now)
 		if price_diff:		
 			mc.set(key,price_diff,86400)
-			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 3 Hour Ago: "+str(tsd)+" : "+str(price_3_hours_ago)+" Diff %: "+str(price_diff))
+			#print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 3 Hour Ago: "+str(tsd)+" : "+str(price_3_hours_ago)+" Diff %: "+str(price_diff))
 			threee_hour_up_perc=price_diff
 	key=str(pair)+str("pkey-6hour")
 	if(mc.get(key)):
@@ -224,13 +224,13 @@ def mojo(pair,price_now):
 	price_6_hours_ago=get_price(pair,str(ts_6hour_ts),str(ts_now_ts))
 	if price_6_hours_ago:
 		price_6_hours_ago=float(price_6_hours_ago)
-		print("P6HA")
-		print(price_6_hours_ago)
+		#print("P6HA")
+		#print(price_6_hours_ago)
 		price_now=float(price_now)
 		price_diff=diff_percent(price_6_hours_ago,price_now)
 		if price_diff:		
 			mc.set(key,price_diff,86400)
-			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" "+str(price_now)+" 6 Hour Ago: "+str(tsd)+" : "+str(price_6_hours_ago)+" Diff %: "+str(price_diff))
+			#print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" "+str(price_now)+" 6 Hour Ago: "+str(tsd)+" : "+str(price_6_hours_ago)+" Diff %: "+str(price_diff))
 	
 	key=str(pair)+str("pkey-12hour")
 	if(mc.get(key)):
@@ -245,13 +245,13 @@ def mojo(pair,price_now):
 	if price_12_hours_ago:
 		price_12_hours_ago=float(price_12_hours_ago)
 		
-		print("P12HA")
-		print(price_12_hours_ago)
+		#print("P12HA")
+		#print(price_12_hours_ago)
 		price_now=float(price_now)
 		price_diff=diff_percent(price_12_hours_ago,price_now)
 		if price_diff:		
 			mc.set(key,price_diff,86400)
-			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 12 Hour Ago: "+str(tsd)+" : "+str(price_12_hours_ago)+" Diff %: "+str(price_diff))
+			#print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 12 Hour Ago: "+str(tsd)+" : "+str(price_12_hours_ago)+" Diff %: "+str(price_diff))
 	#except:
 	#	print("")
 	#sys.exit("Die")
@@ -262,11 +262,11 @@ def get_rsi(pair,interval):
 	out = []
 	fin = []
 	url="https://api.binance.com/api/v1/klines?symbol="+pair+"&interval="+interval+"&limit=500"
-	print(url)
+	#print(url)
 	r=requests.get(url)
 	res = (r.content.strip())
 	status = r.status_code
-	print("Status: "+str(status))
+	#print("Status: "+str(status))
 	rsi_status=''
 	trades = json.loads(res.decode('utf-8'))
 
@@ -383,7 +383,7 @@ def main():
 
 			if percent>1 and price_jump>0.25 and last_price>0 and price>last_price or percent>1 and first==1:
 
-				print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
+				#print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
 	
 				key = str(date.today())+str('ALERTSDBN2')+str(csymbol)
 				if mc.get(key):
@@ -398,16 +398,16 @@ def main():
 						rsi_5m=get_rsi(symbol,'5m')
 						rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 					except:
-						print("Rsi is the issue")
+						#print("Rsi is the issue")
 						errors=1					
 					
 					try:
 						mojo(symbol,close)
 					except:
-						print("Error getting Trades")
+						#print("Error getting Trades")
 						errors=1
 									
-					print("DBERRORS: "+str(errors))		
+					#print("DBERRORS: "+str(errors))		
 					key=str(pair)+str("pkey-1hour")
 					if mc.get(key):
 						one_hours=mc.get(key)
@@ -479,13 +479,17 @@ def main():
 						mckey=str(pair)+str("MCALERTS")
 						mc.incr(mckey,7200)
 						
-						grab_mc_counter=mc.get(mckey)
+						grab_mc_counter=0
+						
+						if mc.get(mckey):
+							grab_mc_counter=mc.get(mckey)
+						
 						if grab_mc_counter>=5 and percent>3 and three_hours>=5:
 							mooning=str(symbol)+'-MOONING'
-						
+							
 						sent=get_sentiment(coin)
-						print("Sentiment")
-						print(sent)
+						#print("Sentiment")
+						#print(sent)
 						data=data+"\n"+str(sent)
 						if a==1:
 							data=data+"\n\n<b>TODAYS ALERTS:</b>"+str(adata)
@@ -494,11 +498,11 @@ def main():
 
 						data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
 							
-						print("DBBBBB")
-						print("LP: ")
-						print(last_price)
-						print("DBBBBB:")
-						print(price)
+						#print("DBBBBB")
+						#print("LP: ")
+						#print(last_price)
+						#print("DBBBBB:")
+						#print(price)
 						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(percent)+'%)'
 						redis_server.rpush(alert_key_all,pdata)
 														
@@ -524,17 +528,17 @@ def main():
 						"link":str(link),
 						}
 		
-						print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
-						print(detail_hash)
+						#print("Writing detailed alert hash data to: "+str(symbol_hash_detailed))
+						#print(detail_hash)
 						redis_server.hmset(symbol_hash_detailed, detail_hash)
 
-						print("Pushing coin to todays alert list: "+str(symbol))
-						print(data)
+						#print("Pushing coin to todays alert list: "+str(symbol))
+						#print(data)
 
 						redis_key="ASLASTPRICE-"+symbol		
 						redis_server.set(redis_key, str(price))
 						
-						print("DB RED: set "+str(redis_key)+' last_price'+str(price))
+						#print("DB RED: set "+str(redis_key)+' last_price'+str(price))
 						broadcast('693711905',data)	
 						broadcast('420441454',data)	
 						broadcast('446619309',data)	
@@ -546,6 +550,8 @@ def main():
 						broadcast('543018578',data)
 						broadcast('503482955',data)
 						broadcast('429640253',data)
+						broadcast('862193134',data)
+						
 						time.sleep(3)	
 e=0
 while True:
