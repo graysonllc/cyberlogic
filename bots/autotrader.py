@@ -60,6 +60,7 @@ def walls(symbol):
 	buy_book=fetch_wall_book(exchange,symbol,'bids','500')
 	sell_book=fetch_wall_book(exchange,symbol,'asks','500')
 
+	
 	buy_dic={}
 	sell_dic={}
 	
@@ -411,10 +412,14 @@ def main(exchange,symbol,c):
 				open_fee=order['fee']
 				order_id=order['info']['orderId']
 				
+				
 				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+ "\n<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>RSI:</b> "+str(rsi)+" <b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
-				broadcast(message)
-				log_redis(redis_log,message,c)
-				print(message)
+				oo_key=str(symbol)+'-OOTMPS'	
+				if not (mc.get(oo_key)):
+					mc.set(oo_key,1,1800)			
+					broadcast(message)
+					log_redis(redis_log,message,c)
+					print(message)
 
 		if use_stoploss=="yes":
 			
@@ -538,7 +543,11 @@ def main(exchange,symbol,c):
 			message="\nLive Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh:"+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n"
 			
 			log_redis(redis_trade_log,message,c)
-			
+			if enable_buybacks=='no':
+				message="killing script no buyback here success sell without stoploss hitting"
+				delete_bot(symbol)
+				broadcast(message)	
+				return("kill")
 		else:
 			if use_stoploss=="yes":
 		
@@ -599,7 +608,7 @@ def main(exchange,symbol,c):
 			if not (mc.get(tm_key)):
 				mc.set(tm_key,1,600)			
 				broadcast(message)
-				walls(symbol)
+				#walls(symbol)
 				log_redis(redis_log,message,c)
 
 		return(1)

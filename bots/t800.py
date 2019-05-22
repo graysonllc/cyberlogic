@@ -255,7 +255,7 @@ def news(bot, update):
 
 def fetch_order_book(exchange,symbol,type,qlimit):
 	#limit = 1000
-	ret=exchange.fetch_order_book(symbol, qlimit)
+	ret=exchange.fetch_l2_order_book(symbol, qlimit)
 
 	if type=='bids':
 		bids=ret['bids']
@@ -524,12 +524,22 @@ def add_bot(bot, update, args):
 			
 			#change from market buy to scraped order book buy
 			#ret=exchange.create_order (symbol, 'MARKET', 'BUY', units)
-
-			book=fetch_order_book(exchange,symbol,'asks',1)
-			buy_price=float(book[0][0])
-			ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)
-			
-			#print(ret)
+			exchange=get_exchange()
+			buy_book=fetch_order_book(exchange,symbol,'bids','1000')
+			#print(buy_book)
+			#buy_dic={}
+	
+			#for k,v in buy_book:
+			#	buy_dic[k]=v
+			#
+			#buy_walls=heapq.nlargest(30, buy_dic.items(), key=itemgetter(1))
+			#buy_price=float(buy_walls[0][0])
+			#buy_price_add=buy_price/100*0.5
+			buy_pos=int(buy_pos)
+			buy_price=float(buy_book[buy_pos][0])
+			print("ALERT ALERT ALERT: BPPPP"+str(buy_price))
+			print(buy_price)
+			ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)			
 		spawn_bot(symbol)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)	
 
@@ -647,6 +657,34 @@ def replace_last(source_string, replace_what, replace_with):
     return head + replace_with + tail
 
 
+def bookintel(bot, update, args):
+	
+	symbol=args[0].upper()
+	book=args[1]
+	start_price=float(args[2])
+	end_price=float(args[3])
+	
+	exchange=get_exchange()
+	
+	p=0
+	total_volume=0
+	if book=="buy":
+		bids=fetch_order_book(exchange,symbol,'bids','1000')
+		p=1
+	elif book=="sell":
+		bids=fetch_order_book(exchange,symbol,'asks','500')	
+		p=1
+	if p==1:
+		for k,v in bids:
+			if k>=start_price and k<=end_price:
+				total_volume+=v
+			
+		ret="<b>:::VOLUME INTEL FOR "+str(symbol).upper()+"</b>\n"
+		ret=ret+"<b>:::PRICE BETWEEN: "+str(start_price)+" AND: "+str(end_price)+"</b>\n"
+		ret=ret+"<b>:::RESULT IS: "+str(total_volume)+"</b>\n"	
+		bot.send_message(chat_id=update.message.chat_id, text=ret,parse_mode= 'HTML')
+		
+
 def walls(bot, update, args):
 	
 	symbol=args[0].upper()
@@ -664,9 +702,8 @@ def walls(bot, update, args):
 	for k,v in sell_book:
 		sell_dic[k]=v
 				
-	buy_walls=heapq.nlargest(20, buy_dic.items(), key=itemgetter(1))
-	print(buy_walls)
-	sell_walls=heapq.nlargest(20, sell_dic.items(), key=itemgetter(1))
+	buy_walls=heapq.nlargest(25, buy_dic.items(), key=itemgetter(1))
+	sell_walls=heapq.nlargest(25, sell_dic.items(), key=itemgetter(1))
 	
 	message="<b>WALL INTEL:</b>\n\n"
 	
@@ -996,6 +1033,7 @@ delete_bot_handler=CommandHandler('deletebot', delete_bot,pass_args=True)
 alerts_handler=CommandHandler('alerts', alerts,pass_args=True)
 cashout_handler = CommandHandler('cashout', cashout,pass_args=True)
 walls_handler = CommandHandler('walls', walls,pass_args=True)
+book_intel_handler = CommandHandler('bookintel', bookintel,pass_args=True)
 
 dispatcher.add_handler(delete_bot_handler)
 dispatcher.add_handler(add_bot_handler)
@@ -1011,5 +1049,6 @@ dispatcher.add_handler(p_handler)
 dispatcher.add_handler(alerts_handler)
 dispatcher.add_handler(cashout_handler)
 dispatcher.add_handler(walls_handler)
+dispatcher.add_handler(book_intel_handler)
 
 updater.start_polling()
