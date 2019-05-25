@@ -24,6 +24,10 @@ import ccxt  # noqa: E402
 
 redis_server = redis.Redis(host='localhost', port=6379, db=0)
 
+def replace_last(source_string, replace_what, replace_with):
+    head, _sep, tail = source_string.rpartition(replace_what)
+    return head + replace_with + tail
+
 def get_exchange():
 	
 	#Read in our apikeys and accounts
@@ -44,6 +48,15 @@ def get_exchange():
 	return(exchange)
 
 exchange=get_exchange()	
+
+def broadcast_moon(chatid,text):
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+	telegram_id=config['binance']['MOON_TELEGRAM_ID']
+	token = telegram_id
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
+	r=requests.get(url)
+	html = r.content
 
 def broadcast(chatid,text):
 	config = configparser.ConfigParser()
@@ -381,7 +394,7 @@ def main():
 
 			pair=symbol
 
-			if percent>1 and price_jump>0.25 and last_price>0 and price>last_price or percent>1 and first==1:
+			if percent>1 and price_jump>0.1 and last_price>0 and price>last_price or percent>1 and first==1:
 
 				#print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
 	
@@ -451,6 +464,8 @@ def main():
 						date_today=str(date.today())							
 						alert_key_all=str(date_today)+'-NALERTddsSKdNNBNS'+str(symbol)
 						alert_list_today=str(date_today)+'-ALERTLIST'
+						alert_key_nd=str(symbol)+'-ALLALERTS'
+
 						symbol_ids=str(symbol)+'-IDS'
 						symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
 						
@@ -477,15 +492,17 @@ def main():
 						
 						#Lets also make a memcache # of alerts so we can have auto expiry time, lets set expiry to two hours "7200 seconds rolling"
 						mckey=str(pair)+str("MCALERTS")
-						mc.incr(mckey,7200)
+						mc.incr(mckey,10800)
 						
 						grab_mc_counter=0
 						
 						if mc.get(mckey):
 							grab_mc_counter=mc.get(mckey)
-						
-						if grab_mc_counter>=5 and percent>3 and three_hours>=5:
+
+						moon=0
+						if grab_mc_counter>=5 and percent>3 and fifteen_mins>2:
 							mooning=str(symbol)+'-MOONING'
+							moon=1
 							
 						sent=get_sentiment(coin)
 						#print("Sentiment")
@@ -505,7 +522,8 @@ def main():
 						#print(price)
 						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(percent)+'%)'
 						redis_server.rpush(alert_key_all,pdata)
-														
+						redis_server.rpush(alert_key_nd,pdata)
+		
 						redis_server.sadd(alert_list_today,symbol)
 						
 						#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
@@ -539,6 +557,43 @@ def main():
 						redis_server.set(redis_key, str(price))
 						
 						#print("DB RED: set "+str(redis_key)+' last_price'+str(price))
+						if fifteen_mins>=1:
+							dtoday=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+							moonkey=str(dtoday)+'-mooning'
+							broadcast_moon('506872080',data)	
+							broadcast_moon('506872080',moonkey)	
+
+							print("Sent a moon shot alert: key:"+str(moonkey))
+							redis_server.sadd(moonkey, symbol)
+							
+							symbol=symbol.upper()
+							ticker_symbol=symbol
+							if symbol.endswith('BTC'):
+								ticker_symbol = replace_last(ticker_symbol, 'BTC', '')
+							elif symbol.endswith('USDT'):
+								ticker_symbol = replace_last(ticker_symbol, '/USDT', '')
+							elif symbol.endswith('BNB'):
+								ticker_symbol = replace_last(ticker_symbol, '/BNB', '')
+							elif symbol.endswith('TUSD'):
+								ticker_symbol = replace_last(ticker_symbol, '/TUSD', '')
+							elif symbol.endswith('USD'):
+								ticker_symbol = replace_last(ticker_symbol, '/USD', '')
+							elif symbol.endswith('USDC'):
+								ticker_symbol = replace_last(ticker_symbol, '/USDC', '')
+							elif symbol.endswith('PAX'):
+								ticker_symbol = replace_last(ticker_symbol, '/PAX', '')
+							elif symbol.endswith('USDS'):
+								ticker_symbol = replace_last(ticker_symbol, '/USDS', '')
+							elif symbol.endswith('ETH'):
+								ticker_symbol = replace_last(ticker_symbol, '/ETH', '')
+							print(ticker_symbol)
+							
+							print("Debug TS: "+str(ticker_symbol))
+							broadcast_moon('506872080',ticker_symbol)	
+
+							moonkey2=str(dtoday)+'-mooning-np'
+							redis_server.sadd(moonkey2, ticker_symbol)
+
 						broadcast('693711905',data)	
 						broadcast('420441454',data)	
 						broadcast('446619309',data)	

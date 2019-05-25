@@ -363,6 +363,7 @@ def cashout(bot, update, args):
 def delete_bot(bot, update, args):
 	
 	bot_name=args[0]
+	symbol=bot_name
 	print(bot_name)
 	
 	ret="::Crypto Logic Deleted bot: "+str(bot_name)
@@ -382,9 +383,11 @@ def delete_bot(bot, update, args):
 		print("Wrote: "+str(configfile))
 	
 		#subprocess.run(["/usr/bin/circusd", "--daemon",config_file])
-		
+			
 		key=str(symbol)+'-SYSTEM-STOPLOSS'
-		mc.delete(key)
+		if mc.get(key):
+			mc.delete(key)
+
 		bot.send_message(chat_id=update.message.chat_id, text=ret)
 		
 		subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
@@ -802,7 +805,9 @@ def alerts(bot,update,args):
 				elif symbol.endswith('USDS'):
 					ticker_symbol = replace_last(ticker_symbol, 'USDS', '')
 					ticker_symbol=ticker_symbol+'/USDS'	
-
+				elif symbol.endswith('ETH'):
+					ticker_symbol = replace_last(ticker_symbol, 'ETH', '')
+					ticker_symbol=ticker_symbol+'/ETH'	
 				if pcoin and ticker_symbol!=pcoin:
 					#print(pcoin_nb)
 					#print(ticker_symbol)
