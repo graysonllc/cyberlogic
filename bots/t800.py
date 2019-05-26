@@ -390,7 +390,7 @@ def delete_bot(bot, update, args):
 
 		bot.send_message(chat_id=update.message.chat_id, text=ret)
 		
-		subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
+		#subprocess.run(["/usr/bin/circusctl", "reloadconfig"])
 
 def spawn_bot(symbol):
 	

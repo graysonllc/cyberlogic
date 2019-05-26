@@ -161,7 +161,7 @@ def fetch_prices(exchange, symbol):
 
 def fetch_last_order(exchange,symbol):
 	print("passed: "+str(symbol))
-	et=exchange.fetch_closed_orders (symbol, 1);
+	ret=exchange.fetch_closed_orders (symbol, 1);
 	print(ret)
 	if ret:
 		
@@ -305,6 +305,8 @@ def main(exchange,symbol,c):
 	stoploss_percent=float(stoploss_percent)
 	safeguard_percent=float(safeguard_percent)
 	use_stoploss=str(use_stoploss)
+	if use_stoploss=='1':
+		use_stoploss=str('yes')
 	units=float(units)
 	sell_pos=int(sell_pos)
 	buy_pos=int(buy_pos)
@@ -355,6 +357,19 @@ def main(exchange,symbol,c):
 	high=float(ticker['high'])
 	low=float(ticker['low'])
 	
+	lo_key="last_order-"+str(symbol)
+	if mc.get(lo_key):
+		last_array=mc.get(lo_key)
+		last_price=float(last_array['price'])
+		last_type=last_array['side']
+	else:
+		#Cache last order in ram for 60 seconds to speed up api calls
+		print("Db: lT: "+str(symbol))
+		last_array=fetch_last_order(exchange,symbol)
+		last_price=float(last_array['price'])
+		last_type=last_array['side']
+		mc.set(lo_key,last_array,60)
+
 	if open_order:
 		for order in orders:
 			order_symbol=order['info']['symbol']
@@ -364,8 +379,7 @@ def main(exchange,symbol,c):
 				open_filled=order['filled']
 				open_remaining=order['remaining']
 				open_fee=order['fee']
-				order_id=order['info']['orderId']
-				
+				order_id=order['info']['orderId']				
 				
 				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+ "\n<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>RSI:</b> "+str(rsi)+" <b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
 				oo_key=str(symbol)+'-OOTMPS'	
@@ -375,71 +389,67 @@ def main(exchange,symbol,c):
 					log_redis(redis_log,message,c)
 					print(message)
 
-		if use_stoploss=="yes":
+	if use_stoploss=="yes" or use_stoploss==1:
 			
-				try:
+		if last_type=='BUY':
 					
-					if last_type=='BUY':
-					
-						print("Debug SL: "+str(stoploss_percent))
-						print("Debug SL: "+str(last_price))
+			print("Debug SL: "+str(stoploss_percent))
+			print("Debug SL: "+str(last_price))
 		
-						stoploss=last_price/100*stoploss_percent
-						stoploss_price=last_price-stoploss
+			stoploss=last_price/100*stoploss_percent
+			stoploss_price=last_price-stoploss
 						
-						### ADD SMART STOPLOSS CODE
-						key=str(symbol)+'-SYSTEM-STOPLOSS'
-						if mc.get(key):
-							stoploss_price=float(mc.get(key))
-							sell_price=stoploss_price
-						else:
-							book=fetch_order_book(exchange,symbol,'bids',1)
-							#sell_price=float(last)
-							sell_price=float(book[0][0])
+			### ADD SMART STOPLOSS CODE
+			key=str(symbol)+'-SYSTEM-STOPLOSS'
+			if mc.get(key):
+				stoploss_price=float(mc.get(key))
+				sell_price=stoploss_price
+			else:
+				book=fetch_order_book(exchange,symbol,'bids',1)
+				sell_price=float(book[0][0])
 
-						message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
-						log_redis(redis_log,message,c)
-						print(message)
+			message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
+			log_redis(redis_log,message,c)
+			print(message)
 
-						if last <= stoploss_price:
+			if last <= stoploss_price:
 
-							book=fetch_order_book(exchange,symbol,'bids',1)
-							sell_price=float(book[0][0])
+				book=fetch_order_book(exchange,symbol,'bids',1)
+				sell_price=float(book[0][0])
 
-							mc.delete(key)
-							print("creating stoploss order: "+str(sell_price))
-							message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b>, <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
-							broadcast(message)
-							print(message)
-							log_redis(redis_trade_log,message,c)
+				mc.delete(key)
+				print("creating stoploss order: "+str(sell_price))
+				message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b>, <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
+				broadcast(message)
+				print(message)
+				log_redis(redis_trade_log,message,c)
 							
-							if live=="yes":
-								ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
-								broadcast(message)
+				if live=="yes":
+					ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
+					broadcast(message)
 
-							message="Killing Bot"
-							log_redis(redis_trade_log,message,c)
-							if enable_buybacks=='no':
-								delete_bot(symbol)			
-								print("killing bot/deleting it")	
-								return("kill")
-							key=str(symbol)+'-SL'	
-							mc.set(key,1,86400)			
-				except:
-					print("Some Error\n")
+					message="Killing Bot"
+					log_redis(redis_trade_log,message,c)
+					if enable_buybacks=='no':
+						delete_bot(symbol)			
+						print("killing bot/deleting it")	
+						return("kill")
+						key=str(symbol)+'-SL'	
+						mc.set(key,1,86400)			
 	else:
 	
 		key=str(symbol)+'-LAST-PRICE'	
 		mc.set(key,close,86400)
 
 		lo_key="last_order-"+str(symbol)
-		#mc.delete(lo_key)
+		mc.delete(lo_key)
 		if mc.get(lo_key):
 			last_array=mc.get(lo_key)
 			last_price=float(last_array['price'])
 			last_type=last_array['side']
 		else:
 			#Cache last order in ram for 60 seconds to speed up api calls
+			print("Db: lT: "+str(symbol))
 			last_array=fetch_last_order(exchange,symbol)
 			last_price=float(last_array['price'])
 			last_type=last_array['side']
@@ -486,6 +496,49 @@ def main(exchange,symbol,c):
 
 		if trade_action=="buying" and rsi<=rsi_buy or trade_action=="buying" and ignore_rsi==1 or trade_action=="buying" and got_key==1:
 			
+			if use_stoploss=="yes":
+				stoploss=last_price/100*stoploss_percent
+				stoploss_price=last_price-stoploss
+		
+				print("Debug: "+str(stoploss_percent))
+				print("Last Price: "+str(last_price))
+			
+				### ADD SMART STOPLOSS CODE
+				key=str(symbol)+'-SYSTEM-STOPLOSS'
+				if mc.get(key):
+					stoploss_price=float(mc.get(key))	
+						
+				print("last buy price: "+str(last_price))
+				print("stoploss price: "+str(stoploss_price))
+				print("market price: "+str(last))
+					
+				message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
+				log_redis(redis_log,message,c)
+				print(message)
+
+				if last <= stoploss_price:		
+					mc.delete(key)
+					book=fetch_order_book(exchange,symbol,'bids',1)
+					sell_price=float(book[0][0])
+					print("creating stoploss order: "+str(sell_price))
+					message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b> <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
+					broadcast(message)
+					log_redis(redis_trade_log,message,c)
+					if live=="yes":
+						ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
+							
+					if enable_buybacks=='no':
+						message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
+						delete_bot(symbol)
+						broadcast(message)	
+						return("kill")
+						
+						key=str(symbol)+'-KILL'	
+						mc.set(key,1,86400)			
+						
+						key=str(symbol)+'-SL'	
+						mc.set(key,1,86400)	
+						
 			if enable_safeguard=='yes':
 				safeguard=last_price/100*safeguard_percent
 				price=last_price-safeguard
@@ -542,59 +595,6 @@ def main(exchange,symbol,c):
 				delete_bot(symbol)
 				broadcast(message)	
 				return("kill")
-		else:
-			if use_stoploss=="yes":
-		
-				if last_type=='BUY':
-
-					stoploss=last_price/100*stoploss_percent
-					stoploss_price=last_price-stoploss
-		
-					print("Debug: "+str(stoploss_percent))
-					print("Last Price: "+str(last_price))
-			
-					### ADD SMART STOPLOSS CODE
-					key=str(symbol)+'-SYSTEM-STOPLOSS'
-					if mc.get(key):
-						stoploss_price=float(mc.get(key))	
-						
-					print("last buy price: "+str(last_price))
-					print("stoploss price: "+str(stoploss_price))
-					print("market price: "+str(last))
-					
-					message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
-					log_redis(redis_log,message,c)
-					print(message)
-
-					if last <= stoploss_price:
-					
-						mc.delete(key)
-
-						book=fetch_order_book(exchange,symbol,'bids',1)
-						
-						sell_price=float(book[0][0])
-
-						print("creating stoploss order: "+str(sell_price))
-						message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b> <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
-
-						broadcast(message)
-						log_redis(redis_trade_log,message,c)
-
-						if live=="yes":
-							ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
-							
-						if enable_buybacks=='no':
-							message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
-							delete_bot(symbol)
-							broadcast(message)	
-							return("kill")
-						
-						key=str(symbol)+'-KILL'	
-						mc.set(key,1,86400)			
-						
-						key=str(symbol)+'-SL'	
-						mc.set(key,1,86400)			
-
 		
 			message="<b>ALERT:: - "+str(symbol)+"</b>\nThe market Conditions are not right for a buy or sell <b>RSI is:</b> "+str(rsi)+" Our next action is -> "+str(trade_action)
 			print(message)
