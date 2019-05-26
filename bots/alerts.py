@@ -21,7 +21,7 @@ sys.path.append(root + '/python')
 import talib
 import numpy as np
 import ccxt  # noqa: E402
-#import nbotfuncs
+import nickbot
 
 redis_server = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -29,26 +29,7 @@ def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
     return head + replace_with + tail
 
-def get_exchange():
-	
-	#Read in our apikeys and accounts
-	config = configparser.ConfigParser()
-	config.read('/root/akeys/b.conf')
-	conf=config['binance']
-	
-	binance_api_key=config['binance']['API_KEY']
-	binance_api_secret=config['binance']['API_SECRET']
-	
-	exchange = ccxt.binance({
-    'apiKey': binance_api_key,
-    'secret': binance_api_secret,
-    'enableRateLimit': True,
-    'rateLimit': 3600,
-    'verbose': False,  # switch it to False if you don't want the HTTP log
-	})
-	return(exchange)
-
-exchange=get_exchange()	
+exchange=nickbot.get_exchange()	
 
 def broadcast_moon(chatid,text):
 	config = configparser.ConfigParser()
@@ -118,7 +99,7 @@ def diff_percent(low,high):
 
 def get_sentiment(symbol):
 	
-	exchange=get_exchange()	
+	exchange=nickbot.get_exchange()	
 	ts_now = datetime.datetime.now()
 	ts_now_ts=int(time.mktime(ts_now.timetuple()))	
 
@@ -322,6 +303,7 @@ def main():
 	tickers=exchange.fetchTickers()
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 	for coin in tickers:
+		#print("Scanning: "+str(coin))
 		first=0
 		skip=1
 		broadcast_message=0
@@ -521,7 +503,7 @@ def main():
 						#print(price)
 						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(percent)+'%)'
 						
-						alert_key_nd=str(symbol)+'-ALL-ALERTS'
+						alert_key_nd=str(coin)+'-ALL-ALERTS'
 						redis_server.rpush(alert_key_all,pdata)
 						redis_server.rpush(alert_key_nd,pdata)
 						redis_server.sadd(alert_list_today,symbol)
@@ -601,9 +583,41 @@ def main():
 							moonkey2=str(dtoday)+'-mooning-np'
 							redis_server.sadd(moonkey2, ticker_symbol)
 
-							#balances=exchange.fetch_balance ()
-							#pair_1_balance=float(format(balances[trade_from]['total'],'.8f')
-							
+							max_bots=10
+							#$100 bucks budget per bot
+							budget=30
+							#Lets Work out the number of units here
+							bankinfo=nickbot.work_units(coin,budget)
+							units=float(bankinfo["units"])
+							balance_needed=float(bankinfo["balance_needed"])
+							#Lets check the whole bank roll to see if we got enuff dough for the trade
+							balances=exchange.fetch_balance ()
+							bank_balance=float(format(balances[trading_to]['total'],'.8f'))
+							if bank_balance>=balance_needed:
+								bcdb='lets spawn an auto trader bot for '+str(coin)+' budget: '+str(budget)+' Units: '+str(units)
+								broadcast_moon('506872080',bcdb)
+								#lets check we don't have a bot allready running for this shit and that we didn't exceed max amount of bots
+								botlist=redis_server.smembers("botlist")
+								bots_running=int(len(botlist))
+								if coin not in botlist and bots_running<=max_bots:					
+									rsi_symbol=str(symbol)
+									symbol=str(coin)
+									buy_pos=int(20)
+									sell_pos=int(20)
+									stoploss_percent=float(4)
+									use_stoploss=int(1)
+									candle_size=str('5m')
+									safeguard_percent=float(2)
+									rsi_buy=float(20)
+									rsi_sell=float(80)
+									instant_market_buy=str('yes')
+									enable_buybacks=str('no')
+									enable_safeguard=str('yes')
+									force_buy=str('yes')
+									force_sell=str('no')
+									live=str('yes')
+									trading_on=str('Binance')
+									nickbot.auto_spawn(trading_on, rsi_symbol, symbol, units, trading_from, trading_to, buy_pos, sell_pos, stoploss_percent, use_stoploss, candle_size, safeguard_percent, rsi_buy, rsi_sell, instant_market_buy, enable_buybacks, enable_safeguard, force_buy, force_sell, live)
 						broadcast('693711905',data)	
 						broadcast('420441454',data)	
 						broadcast('446619309',data)	

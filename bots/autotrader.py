@@ -160,8 +160,9 @@ def fetch_prices(exchange, symbol):
    
 
 def fetch_last_order(exchange,symbol):
-	ret=exchange.fetch_closed_orders (symbol, 1);
-	#print(ret)
+	print("passed: "+str(symbol))
+	et=exchange.fetch_closed_orders (symbol, 1);
+	print(ret)
 	if ret:
 		
 		data=ret[-1]['info']
@@ -334,10 +335,7 @@ def main(exchange,symbol,c):
 	
 	tkey="seen"+str(symbol)
 	orders = exchange.fetch_open_orders(symbol,1)
-	balances=exchange.fetch_balance ()
-	pair_1_balance=float(format(balances[trade_from]['total'],'.8f'))
-	pair_2_balance=float(format(balances[trade_to]['total'],'.8f'))
-
+	
 	open_order=len(orders)
 	
 	rsikey="rsi"+str(symbol)
@@ -357,50 +355,6 @@ def main(exchange,symbol,c):
 	high=float(ticker['high'])
 	low=float(ticker['low'])
 	
-	key=str(symbol)+'-LAST-PRICE'	
-	mc.set(key,close,86400)
-
-	lo_key="last_order-"+str(symbol)
-	#mc.delete(lo_key)
-	if mc.get(lo_key):
-		last_array=mc.get(lo_key)
-		last_price=float(last_array['price'])
-		last_type=last_array['side']
-	
-	else:
-		#Cache last order in ram for 60 seconds to speed up api calls
-		last_array=fetch_last_order(exchange,symbol)
-		last_price=float(last_array['price'])
-		last_type=last_array['side']
-		mc.set(lo_key,last_array,60)
-		
-	if last_price==0.00:
-		#Was a market buy so we didn't pass a buy price work it out by cummulativeQuoteQty/aka fee / units
-		market_fee=float(last_array['cummulativeQuoteQty'])
-		market_units=float(last_array['origQty'])
-		last_price=market_fee/market_units
-		print("Debug LA: ")
-		print(last_price)
-	print(last_array)
-	#mc.set(lo_key,last_array,60)			
-	
-	print(last_array)
-	if last_type=='BUY':
-		trade_action='selling'
-	else:
-		trade_action='buying'
-
-	#Added forcebuy usefull if u wanna force a buy on rsi without instant buy @ market
-	fbkey=symbol+"-FORCE-BUY"
-	if mc.get(fbkey):
-		trade_action='buying'
-		mc.delete(fbkey)
-
-	fskey=symbol+"-FORCE-SELL"
-	if mc.get(fskey):
-		trade_action='selling'
-		mc.delete(fskey)
-
 	if open_order:
 		for order in orders:
 			order_symbol=order['info']['symbol']
@@ -474,6 +428,49 @@ def main(exchange,symbol,c):
 				except:
 					print("Some Error\n")
 	else:
+	
+		key=str(symbol)+'-LAST-PRICE'	
+		mc.set(key,close,86400)
+
+		lo_key="last_order-"+str(symbol)
+		#mc.delete(lo_key)
+		if mc.get(lo_key):
+			last_array=mc.get(lo_key)
+			last_price=float(last_array['price'])
+			last_type=last_array['side']
+		else:
+			#Cache last order in ram for 60 seconds to speed up api calls
+			last_array=fetch_last_order(exchange,symbol)
+			last_price=float(last_array['price'])
+			last_type=last_array['side']
+			mc.set(lo_key,last_array,60)
+		
+		print(last_array)
+		if last_price==0.00:
+			#Was a market buy so we didn't pass a buy price work it out by cummulativeQuoteQty/aka fee / units
+			market_fee=float(last_array['cummulativeQuoteQty'])
+			market_units=float(last_array['origQty'])
+			last_price=market_fee/market_units
+			print("Debug LA: ")
+			print(last_price)
+			print(last_array)
+	
+		if last_type=='BUY':
+			trade_action='selling'
+		else:
+			trade_action='buying'
+
+		#Added forcebuy usefull if u wanna force a buy on rsi without instant buy @ market
+		fbkey=symbol+"-FORCE-BUY"
+		if mc.get(fbkey):
+			trade_action='buying'
+			mc.delete(fbkey)
+
+		fskey=symbol+"-FORCE-SELL"
+		if mc.get(fskey):
+			trade_action='selling'
+			mc.delete(fskey)
+
 		message="No open orders Currently RSI: "+str(rsi)	
 		log_redis(redis_log,message,c)
 		print(message)
@@ -498,9 +495,7 @@ def main(exchange,symbol,c):
 				
 			exchange_cut=price/100*0.007500
 			price=price-exchange_cut
-			print("Making buyorder for "+str(units)+" price: "+str(price)+"\n")
-			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
-	
+			print("Making buyorder for "+str(units)+" price: "+str(price)+"\n")	
 	
 			message="<b>ALERT:: - "+str(symbol)+" BUYING</b> "+str(units)+"UNITS\t<b>BUY @:</b> "+str(price)+"\t<b>LAST SELL @:</b> "+str(last_price)
 			log_redis(redis_trade_log,message,c)
@@ -531,7 +526,6 @@ def main(exchange,symbol,c):
 			price=price+exchange_cut
 			
 			print("Making sell order for "+str(units)+" price: "+str(price)+"\n")
-			add="\nBalance:"+str(trade_from)+str('=')+str(pair_1_balance)+"\nBalance: "+str(trade_to)+str('=')+str(pair_2_balance)				
 
 			message="<b>ALERT:: - "+str(symbol)+" SELLING</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(price)+"\t<b>LAST BUY:</b> "+str(last_price)
 			broadcast(message)
