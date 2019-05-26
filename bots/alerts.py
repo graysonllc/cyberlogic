@@ -21,6 +21,7 @@ sys.path.append(root + '/python')
 import talib
 import numpy as np
 import ccxt  # noqa: E402
+#import nbotfuncs
 
 redis_server = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -321,7 +322,6 @@ def main():
 	tickers=exchange.fetchTickers()
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 	for coin in tickers:
-
 		first=0
 		skip=1
 		broadcast_message=0
@@ -369,7 +369,7 @@ def main():
 		if 'BCHSV' in symbol:
 
 			continue
-			
+		#print(symbol)
 		redis_key="ASLASTPRICE-"+symbol		
 		
 		if redis_server.get(redis_key):
@@ -464,7 +464,6 @@ def main():
 						date_today=str(date.today())							
 						alert_key_all=str(date_today)+'-NALERTddsSKdNNBNS'+str(symbol)
 						alert_list_today=str(date_today)+'-ALERTLIST'
-						alert_key_nd=str(symbol)+'-ALLALERTS'
 
 						symbol_ids=str(symbol)+'-IDS'
 						symbol_hash_detailed=str(symbol)+'-'+str(ts_raw)
@@ -521,9 +520,10 @@ def main():
 						#print("DBBBBB:")
 						#print(price)
 						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(percent)+'%)'
+						
+						alert_key_nd=str(symbol)+'-ALL-ALERTS'
 						redis_server.rpush(alert_key_all,pdata)
 						redis_server.rpush(alert_key_nd,pdata)
-		
 						redis_server.sadd(alert_list_today,symbol)
 						
 						#Add Unique Timestamp to list for this symbol, will use as identifer for hash later
@@ -561,7 +561,6 @@ def main():
 							dtoday=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
 							moonkey=str(dtoday)+'-mooning'
 							broadcast_moon('506872080',data)	
-							broadcast_moon('506872080',moonkey)	
 
 							print("Sent a moon shot alert: key:"+str(moonkey))
 							redis_server.sadd(moonkey, symbol)
@@ -569,31 +568,42 @@ def main():
 							symbol=symbol.upper()
 							ticker_symbol=symbol
 							if symbol.endswith('BTC'):
-								ticker_symbol = replace_last(ticker_symbol, 'BTC', '')
+								ticker_symbol = replace_last(ticker_symbol, '/BTC', '')
+								trading_to=str('BTC')
 							elif symbol.endswith('USDT'):
 								ticker_symbol = replace_last(ticker_symbol, '/USDT', '')
+								trading_to=str('USDT')
 							elif symbol.endswith('BNB'):
 								ticker_symbol = replace_last(ticker_symbol, '/BNB', '')
+								trading_to=str('BNB')
 							elif symbol.endswith('TUSD'):
 								ticker_symbol = replace_last(ticker_symbol, '/TUSD', '')
+								trading_to=str('TUSD')
 							elif symbol.endswith('USD'):
 								ticker_symbol = replace_last(ticker_symbol, '/USD', '')
+								trading_to=str('USD')
 							elif symbol.endswith('USDC'):
 								ticker_symbol = replace_last(ticker_symbol, '/USDC', '')
+								trading_to=str('USDC')
 							elif symbol.endswith('PAX'):
 								ticker_symbol = replace_last(ticker_symbol, '/PAX', '')
+								trading_to=str('PAX')
 							elif symbol.endswith('USDS'):
 								ticker_symbol = replace_last(ticker_symbol, '/USDS', '')
+								trading_to=str('USDS')
 							elif symbol.endswith('ETH'):
 								ticker_symbol = replace_last(ticker_symbol, '/ETH', '')
-							print(ticker_symbol)
-							
+								trading_to=str('ETH')
+							trading_from=ticker_symbol
 							print("Debug TS: "+str(ticker_symbol))
-							broadcast_moon('506872080',ticker_symbol)	
+							#broadcast_moon('506872080',ticker_symbol)	
 
 							moonkey2=str(dtoday)+'-mooning-np'
 							redis_server.sadd(moonkey2, ticker_symbol)
 
+							#balances=exchange.fetch_balance ()
+							#pair_1_balance=float(format(balances[trade_from]['total'],'.8f')
+							
 						broadcast('693711905',data)	
 						broadcast('420441454',data)	
 						broadcast('446619309',data)	
