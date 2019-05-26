@@ -31,6 +31,18 @@ def replace_last(source_string, replace_what, replace_with):
 
 exchange=nickbot.get_exchange()	
 
+def gotbot(symbol):
+	
+	redis_server = redis.Redis(host='localhost', port=6379, db=0)
+	botlist=redis_server.smembers("botlist")
+	
+	seen=0
+	for bot in botlist:
+		bot=bot.decode('utf-8')
+		if bot==symbol:
+			seen=1
+	return(seen)
+	
 def broadcast_moon(chatid,text):
 	config = configparser.ConfigParser()
 	config.read('/root/akeys/b.conf')
@@ -594,12 +606,13 @@ def main():
 							balances=exchange.fetch_balance ()
 							bank_balance=float(format(balances[trading_to]['total'],'.8f'))
 							if bank_balance>=balance_needed:
-								bcdb='lets spawn an auto trader bot for '+str(coin)+' budget: '+str(budget)+' Units: '+str(units)
-								broadcast_moon('506872080',bcdb)
+								
 								#lets check we don't have a bot allready running for this shit and that we didn't exceed max amount of bots
 								botlist=redis_server.smembers("botlist")
 								bots_running=int(len(botlist))
-								if coin not in botlist and bots_running<=max_bots:					
+								if gotbot(coin)!=1 and bots_running<=max_bots:					
+									bcdb='lets spawn an auto trader bot for '+str(coin)+' budget: '+str(budget)+' Units: '+str(units)
+									broadcast_moon('506872080',bcdb)
 									rsi_symbol=str(symbol)
 									symbol=str(coin)
 									buy_pos=int(20)
