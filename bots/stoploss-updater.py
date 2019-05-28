@@ -86,7 +86,7 @@ def fetch_last_order(exchange,symbol):
 def wall_magic(symbol):
 	
 	exchange=get_exchange()
-	buy_book=fetch_order_book(exchange,symbol,'bids','1000')
+	buy_book=fetch_order_book(exchange,symbol,'bids','100')
 	#print(buy_book)
 	buy_dic={}
 	
@@ -133,9 +133,9 @@ def loop_bots():
 		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")				
 		
 		key=str(symbol)+'-TRADES'	
-		key=str(symbol)+'-LAST-PRICE'	
-		if mc.get(key):
-			market_price=float(mc.get(key))
+		key=str(symbol)+'-LAST-PRICE'
+		if r.get(key):
+			market_price=float(r.get(key))
 
 
 		t_key="TTT-"+str(symbol)
@@ -256,6 +256,10 @@ def loop_bots():
 					ckey=str(bot_id)+'-CPS'
 					r.hincrby(ckey, 'checkpoints',1)
 					r.hset(ckey, 'checkpoint_stoploss',new_stoploss)
+				
+					key=str(symbol)+'-ORIGINAL-STOPLOSS-PRICE'
+					mc.set(key,original_stoploss_price,86400)
+					
 				elif last_stoploss==0:
 					print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
 					key=str(symbol)+'-SYSTEM-STOPLOSS'

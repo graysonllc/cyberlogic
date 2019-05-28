@@ -289,8 +289,7 @@ def main(exchange,symbol,c):
 		print(message)
 
 	key=str(symbol)+'-ORIGINAL-SL'	
-	r.setex(key,3600,stoploss_percent)
-
+	mc.set(key,stoploss_percent,864000)
 	ignore_rsi=0
 	sleep_for_after_stoploss_executed=600
 	
@@ -329,9 +328,8 @@ def main(exchange,symbol,c):
 	low=float(ticker['low'])
 	
 	key=str(symbol)+'-LAST-PRICE'	
-	#mc.set(key,close,86400)
-	r.setex(key,3600,close)
-
+	mc.set(key,close,86400)
+	
 	lo_key="last_order-"+str(symbol)
 	if mc.get(lo_key):
 		last_array=mc.get(lo_key)
@@ -341,13 +339,10 @@ def main(exchange,symbol,c):
 		#Cache last order in ram for 60 seconds to speed up api calls
 		print("Db: lT: "+str(symbol))
 		last_array=fetch_last_order(exchange,symbol)
-		if last_array!=0:
-			last_price=float(last_array['price'])
-			last_type=last_array['side']
-			mc.set(lo_key,last_array,60)
-		else:
-			last_type='NULL'
-			
+		last_price=float(last_array['price'])
+		last_type=last_array['side']
+		mc.set(lo_key,last_array,60)
+
 	if open_order:
 		for order in orders:
 			order_symbol=order['info']['symbol']
@@ -358,25 +353,14 @@ def main(exchange,symbol,c):
 				open_remaining=order['remaining']
 				open_fee=order['fee']
 				order_id=order['info']['orderId']				
-				order_timestamp=order['timestamp']/1000
-				start_time=order_timestamp
-				elapsed = time.time() - start_time
-				elapsed=round(elapsed)
 				
-				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+"\n<b>OPEN FOR: </b> "+str(elapsed)+" Seconds\n"+"<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
-				if open_type=='BUY' and float(elapsed)>1200:
-					exchange.cancelOrder(order_id,symbol)
-					delete_bot(symbol)		
-					message=message+"\n\n<b>CANCELLING ORDER TO MUCH TIME ELAPSED</b>\n"
-					broadcast(message)
-				
-				oo_key=str(symbol)+'-OOssTMPS'	
+				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+ "\n<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
+				oo_key=str(symbol)+'-OOTMPS'	
 				if not (mc.get(oo_key)):
 					mc.set(oo_key,1,1800)			
 					broadcast(message)
 					log_redis(redis_log,message,c)
 					print(message)
-	return("open")
 
 	if use_stoploss=="yes" or use_stoploss==1:
 			
@@ -626,8 +610,8 @@ while True:
 	#print("tying")
 	ret=main(exchange,symbol,c)
 	#except:
-	#print("threw error sleeping for 3 seconds")
-	#time.sleep(5)
+	#	print("threw error sleeping for 3 seconds")
+	#	time.sleep(5)
 	
 	if ret=="kill":
 		print("killing")

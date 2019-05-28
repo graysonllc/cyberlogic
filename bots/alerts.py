@@ -90,6 +90,7 @@ def get_price(pair,start_ts,end_ts):
 	url="https://api.binance.com/api/v1/klines?symbol="+pair+"&startTime="+str(start_ts)+"&interval=1m"
 	#print(url)
 	r=requests.get(url)
+	print(r)
 	res = (r.content.strip())
 	status = r.status_code
 	#print(status)
@@ -315,7 +316,7 @@ def main():
 	tickers=exchange.fetchTickers()
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 	for coin in tickers:
-		#print("Scanning: "+str(coin))
+		
 		first=0
 		skip=1
 		broadcast_message=0
@@ -348,7 +349,10 @@ def main():
 		price_jump=0
 		alerts=""
 		
-		if 'USDT' in symbol:
+		if 'USD' in symbol:
+			min_vol=1000000
+			skip=0
+		elif 'PAX' in symbol:
 			min_vol=1000000
 			skip=0
 		elif 'BTC' in symbol:
@@ -361,7 +365,6 @@ def main():
 			min_vol=1000	
 			skip=0
 		if 'BCHSV' in symbol:
-
 			continue
 		#print(symbol)
 		redis_key="ASLASTPRICE-"+symbol		
@@ -375,6 +378,10 @@ def main():
 				price_jump=round(price_jump,2)
 		else:
 			first=1
+			
+		print("Scanning: "+str(coin))
+		print("Percent: "+str(percent))
+		print("Skip: "+str(skip))
 			
 		if skip!=1 and qv >=min_vol and price>last_price:
 			
@@ -390,7 +397,7 @@ def main():
 
 			if percent>1 and price_jump>0.1 and last_price>0 and price>last_price or percent>1 and first==1:
 
-				#print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
+				print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
 	
 				key = str(date.today())+str('ALERTSDBN2')+str(csymbol)
 				if mc.get(key):
@@ -405,7 +412,7 @@ def main():
 						rsi_5m=get_rsi(symbol,'5m')
 						rsi_stats="<b>RSI 3M:</b> "+str(rsi_3m)+" <b>RSI 5M:</b> "+str(rsi_5m)
 					except:
-						#print("Rsi is the issue")
+						print("Rsi is the issue")
 						errors=1					
 					
 					try:
@@ -597,7 +604,7 @@ def main():
 
 							max_bots=10
 							#$100 bucks budget per bot
-							budget=30
+							budget=60
 							#Lets Work out the number of units here
 							bankinfo=nickbot.work_units(coin,budget)
 							units=float(bankinfo["units"])
@@ -615,8 +622,8 @@ def main():
 									broadcast_moon('506872080',bcdb)
 									rsi_symbol=str(symbol)
 									symbol=str(coin)
-									buy_pos=int(20)
-									sell_pos=int(20)
+									buy_pos=int(10)
+									sell_pos=int(10)
 									stoploss_percent=float(4)
 									use_stoploss=int(1)
 									candle_size=str('5m')
@@ -625,7 +632,7 @@ def main():
 									rsi_sell=float(80)
 									instant_market_buy=str('yes')
 									enable_buybacks=str('no')
-									enable_safeguard=str('yes')
+									enable_safeguard=str('no')
 									force_buy=str('yes')
 									force_sell=str('no')
 									live=str('yes')

@@ -13,7 +13,7 @@ import talib
 import numpy as np
 import ccxt
 import redis
-import datetime
+from datetime import datetime
 import configparser
 import subprocess
 import time
@@ -167,6 +167,36 @@ def auto_spawn(trading_on,rsi_symbol, symbol, units, trade_from, trade_to, buy_p
 		ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)
 		print(ret)			
 	spawn_bot(symbol)
+
+exchange=get_exchange()
+
+symbol='DENT/ETH'
+rsi_symbol='DENTETH'
+orders = exchange.fetch_open_orders(symbol,1)
+open_order=len(orders)
+
+if open_order:
+	for order in orders:
+		print(order)
+		order_symbol=order['info']['symbol']
+		
+		if order_symbol==rsi_symbol:
+			open_type=order['info']['side']
+			open_price=order['price']
+			open_filled=order['filled']
+			open_remaining=order['remaining']
+			open_fee=order['fee']
+			order_id=order['info']['orderId']
+			order_timestamp=order['timestamp']/1000
+			start_time=order_timestamp
+			elapsed = time.time() - start_time
+			
+			print("ET: ")
+			print(elapsed_time)
+
+
+
+sys.exit("die")
 
 rsi_symbol=str('ETHUSDT')
 symbol=str('ETH/USDT')
