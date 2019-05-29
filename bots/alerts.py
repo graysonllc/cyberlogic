@@ -379,10 +379,6 @@ def main():
 		else:
 			first=1
 			
-		print("Scanning: "+str(coin))
-		print("Percent: "+str(percent))
-		print("Skip: "+str(skip))
-			
 		if skip!=1 and qv >=min_vol and price>last_price:
 			
 			prices = [low,high]

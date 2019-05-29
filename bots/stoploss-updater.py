@@ -64,6 +64,7 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 
 def fetch_last_order(exchange,symbol):
 	ret=exchange.fetch_closed_orders (symbol, 1);
+	print(ret)
 	if ret:
 		#print(ret)
 		data=ret[-1]['info']
@@ -86,22 +87,23 @@ def fetch_last_order(exchange,symbol):
 def wall_magic(symbol):
 	
 	exchange=get_exchange()
-	buy_book=fetch_order_book(exchange,symbol,'bids','100')
+	book=fetch_order_book(exchange,symbol,'bids','100')
 	#print(buy_book)
-	buy_dic={}
+	#buy_dic={}
 	
-	for k,v in buy_book:
-		buy_dic[k]=v
+	#for k,v in buy_book:
+	#	buy_dic[k]=v
 		
-	buy_walls=heapq.nlargest(30, buy_dic.items(), key=itemgetter(1))
+	#buy_walls=heapq.nlargest(30, buy_dic.items(), key=itemgetter(1))
 	
-	bwl=[]
-	for k,v in sorted(buy_walls):
-		#message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
-		#print("Key: "+str(k)+" V: "+str(v))
-		bwl.append(k)	
+	#bwl=[]
+	#for k,v in sorted(buy_walls):
+	#	#message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
+	#	#print("Key: "+str(k)+" V: "+str(v))
+	#	bwl.append(k)	
 		
-	wall_stoploss=bwl[-3]
+	wall_stoploss=float(book[15][0])
+	#wall_stoploss=bwl[-3]
 	return(wall_stoploss)
 
 exchange=get_exchange()
@@ -126,7 +128,7 @@ def loop_bots():
 		bot_id=r.hget(redis_key,'id').decode('utf-8')
 		
 		revkey='REVERSE-'+str(bot_id)
-		print("Debut Setting "+str(revkey)+"to: "+str(symbol))
+		#print("Debut Setting "+str(revkey)+"to: "+str(symbol))
 		r.set(revkey,symbol)				
 
 		ts=float(r.get(bot_name).decode('utf-8'))				
@@ -139,11 +141,17 @@ def loop_bots():
 
 
 		t_key="TTT-"+str(symbol)
-		#if mc.get(t_key):
-		#	buy_array=mc.get(t_key)
-		#else:
-		#	#Cache last order in ram for 60 seconds to speed up api calls
-		buy_array=fetch_last_order(exchange,symbol)
+		if mc.get(t_key):
+			buy_array=mc.get(t_key)
+		else:
+			#Cache last order in ram for 60 seconds to speed up api calls
+			buy_array=fetch_last_order(exchange,symbol)
+
+		#buy_array=fetch_last_order(exchange,symbol)
+		print("SLDB: "+str(symbol))
+		
+		print(symbol)
+		print(buy_array)
 		#	mc.set(t_key,buy_array,300)
 		
 		#if buy_array==0:
@@ -185,7 +193,9 @@ def loop_bots():
 			original_stoploss_price_ded=buy_price/100*float(original_stoploss_percent)
 			original_stoploss_price=float(buy_price-original_stoploss_price_ded)
 			original_stoploss_price=round(original_stoploss_price,8)
-		
+			key=str(symbol)+'-ORIGINAL-STOPLOSS-PRICE'
+			mc.set(key,original_stoploss_price,86400)
+					
 			message=":::BOT " +str(symbol)+"\nSTARTED: "+str(running)+str("\nBUY PRICE: ")+str(buy_price)+"\nPRICE NOW: "+str(market_price)+"\nUNITS: "+str(units)
 			message=message+"\nVALUE START "+'('+str(trade_to)+'): '+str(investment_start)
 			message=message+"\nVALUE NOW "+'('+str(trade_to)+'): '+str(investment_now)
@@ -256,9 +266,6 @@ def loop_bots():
 					ckey=str(bot_id)+'-CPS'
 					r.hincrby(ckey, 'checkpoints',1)
 					r.hset(ckey, 'checkpoint_stoploss',new_stoploss)
-				
-					key=str(symbol)+'-ORIGINAL-STOPLOSS-PRICE'
-					mc.set(key,original_stoploss_price,86400)
 					
 				elif last_stoploss==0:
 					print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
@@ -266,11 +273,11 @@ def loop_bots():
 					mc.set(key,original_stoploss_price,86400)	
 
 while True:
-	try:
-		loop_bots()
-		print("STOPLOSS UPDATER")
-	except:
-		print("")
+	#try:
+	loop_bots()
+	print("STOPLOSS UPDATER")
+	#except:
+	#print("")
 	time.sleep(5)		
 
 
