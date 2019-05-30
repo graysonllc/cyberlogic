@@ -14,6 +14,7 @@ import redis
 import configparser
 import datetime
 import heapq
+import nickbot
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['LD_LIBRARY_PATH'] = '/usr/local/lib'
@@ -30,89 +31,26 @@ botlist=r.smembers("botlist")
 print(":::STOPLOSS/MOVER Polling Running Bots\n")
 
 import ccxt  # noqa: E402
-
-def get_exchange():
-	
-	#Read in our apikeys and accounts
-	config = configparser.ConfigParser()
-	config.read('/root/akeys/b.conf')
-	conf=config['binance']
-	
-	binance_api_key=config['binance']['API_KEY']
-	binance_api_secret=config['binance']['API_SECRET']
-	
-	exchange = ccxt.binance({
-    'apiKey': binance_api_key,
-    'secret': binance_api_secret,
-    'enableRateLimit': True,
-    'rateLimit': 3600,
-    'verbose': False,  # switch it to False if you don't want the HTTP log
-	})
-	return(exchange)
-
-def fetch_order_book(exchange,symbol,type,qlimit):
-	limit = 1000
-	args='group: 1'
-	ret=exchange.fetch_order_book(symbol, limit)
-
-	if type=='bids':
-		bids=ret['bids']
-		return bids
-	else:
-		asks=ret['asks']
-		return asks
-
-def fetch_last_order(exchange,symbol):
-	ret=exchange.fetch_closed_orders (symbol, 1);
-	print(ret)
-	if ret:
-		#print(ret)
-		data=ret[-1]['info']
-		last_side=data['side']
-		#print("LS: "+str(last_side))
-		#print(data)
-		for order in ret:
-			side=order['info']['side']
-			if side=='BUY':
-				data=order['info']
-				price=float(data['price'])
-				#print("BP: "+str(price))
-		if last_side=='BUY':
-			return data
-		else:
-			return(0)
-	else:
-		return(0)
 				
-def wall_magic(symbol):
+def wall_magic(symbol,last_stoploss):
 	
-	exchange=get_exchange()
-	book=fetch_order_book(exchange,symbol,'bids','100')
-	#print(buy_book)
-	#buy_dic={}
+	exchange=nickbot.get_exchange()
+	book=nickbot.fetch_order_book(exchange,symbol,'bids','100')
+
+	#New JEdimaster shit lets have at least $100k above us in buy order book set our dynamic stoploss @ that position in the book
 	
-	#for k,v in buy_book:
-	#	buy_dic[k]=v
-		
-	#buy_walls=heapq.nlargest(30, buy_dic.items(), key=itemgetter(1))
-	
-	#bwl=[]
-	#for k,v in sorted(buy_walls):
-	#	#message=message+"<b>PRICE:</b> "+str(k)+"\t<b>VOLUME:</b> "+str(v)+"\n"
-	#	#print("Key: "+str(k)+" V: "+str(v))
-	#	bwl.append(k)	
-		
-	wall_stoploss=float(book[15][0])
-	#wall_stoploss=bwl[-3]
+	sl_pos=nickbot.wall_pos(symbol,last_stoploss,100000)
+	print("LSL: "+str(last_stoploss))
+	print("SLP: "+str(sl_pos))
+	wall_stoploss=float(book[sl_pos][0])
+	print("WSL: "+str(wall_stoploss))
 	return(wall_stoploss)
 
-exchange=get_exchange()
+exchange=nickbot.get_exchange()
 
-#new_stoploss=float(wall_magic(symbol))
-#sys.exit("whats")
 def loop_bots():
 	
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	botlist=r.smembers("botlist")
 	for bot_name in botlist:
 		bot_name=bot_name.decode('utf-8')
@@ -145,24 +83,13 @@ def loop_bots():
 			buy_array=mc.get(t_key)
 		else:
 			#Cache last order in ram for 60 seconds to speed up api calls
-			buy_array=fetch_last_order(exchange,symbol)
+			buy_array=nickbot.fetch_last_order(exchange,symbol)
 
-		#buy_array=fetch_last_order(exchange,symbol)
 		print("SLDB: "+str(symbol))
 		
 		print(symbol)
 		print(buy_array)
-		#	mc.set(t_key,buy_array,300)
 		
-		#if buy_array==0:
-		#	ckey=str(bot_id)+'-CPS'
-		#	r.hdel(ckey, 'checkpoint_stoploss')
-		#	r.hdel(ckey, 'checkpoints')
-		#	key=str(symbol)+'-SYSTEM-STOPLOSS'
-		#	mc.delete(key)
-		#	bkey=str(symbol)+'-UPDATE'
-		#	r.DEL(bkey)		
-
 		if buy_array!=0:
 			units=float(buy_array['executedQty'])
 			
@@ -237,10 +164,6 @@ def loop_bots():
 				new_stoploss=market_price-dec	
 				new_stoploss=round(new_stoploss,8)
 
-				print("bf new code;")
-				new_stoploss=float(wall_magic(symbol))
-				print("NEW SL ADD: "+str(new_stoploss))
-				print(new_stoploss)
 			
 				key=str(symbol)+'-SYSTEM-STOPLOSS'
 			
@@ -248,7 +171,12 @@ def loop_bots():
 					last_stoploss=mc.get(key)		
 					print("SLP LAST STOPLOSS: "+str(last_stoploss))
 					print("SLP NEW STOPLOSS: "+str(new_stoploss))
-				
+
+				print("bf new code;")
+				new_stoploss=float(wall_magic(symbol,last_stoploss))
+				print("NEW SL ADD: "+str(new_stoploss))
+				print(new_stoploss)
+								
 				if new_stoploss>last_stoploss:
 					ikey=str(bot_id)+'-GOALPOSTS'
 					cycles=r.incr(ikey)
@@ -257,9 +185,7 @@ def loop_bots():
 					r.set(gkey,new_stoploss)				
 	
 					print(str(symbol)+":::STOPLOSS/MOVER MOVED GOAL POST: "+str(cycles)+" Times!\n")
-					#key=str(symbol)+'-SYSTEM-STOPLOSS'
-					#mc.set(key,new_stoploss,864000)		
-
+				
 					print("Goal Post Move Set :"+str(key)+" Stoploss to "+str(new_stoploss))
 					mc.set(key,new_stoploss,86400)	
 					

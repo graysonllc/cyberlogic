@@ -65,7 +65,102 @@ def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
     return head + replace_with + tail
 
+def price_usd(symbol):
 
+	symbol=symbol.upper()
+	ticker_symbol=symbol
+
+	if symbol.endswith('BTC'):
+		ticker_symbol = replace_last(ticker_symbol, '/BTC', '')
+		trade_to='BTC'
+	elif symbol.endswith('USDT'):
+		ticker_symbol = replace_last(ticker_symbol, '/USDT', '')
+		trade_to='USDT'
+	elif symbol.endswith('BNB'):
+		ticker_symbol = replace_last(ticker_symbol, '/BNB', '')
+		trade_to='BNB'
+	elif symbol.endswith('TUSD'):
+		ticker_symbol = replace_last(ticker_symbol, '/TUSD', '')
+		trade_to='TUSD'
+	elif symbol.endswith('USD'):
+		ticker_symbol = replace_last(ticker_symbol, '/USD', '')
+		trade_to='USD'
+	elif symbol.endswith('USDC'):
+		ticker_symbol = replace_last(ticker_symbol, '/USDC', '')
+		trade_to='USDC'
+	elif symbol.endswith('PAX'):
+		ticker_symbol = replace_last(ticker_symbol, '/PAX', '')
+		trade_to='PAX'
+	elif symbol.endswith('USDS'):
+		ticker_symbol = replace_last(ticker_symbol, '/USDS', '')
+		trade_to='USDS'
+	elif symbol.endswith('ETH'):
+		ticker_symbol = replace_last(ticker_symbol, '/ETH', '')
+		trade_to='ETH'
+	
+	trade_from=ticker_symbol
+	exchange=get_exchange()
+	
+	pair_price=0
+	budget=1
+	if trade_to=='ETH':
+		tickers=fetch_prices(exchange,'ETH/USDT')
+		trade_to_price=float(tickers['close'])
+		tickers=fetch_prices(exchange,symbol)
+		pair_price=float(tickers['close'])
+		fraction_to_budget=budget/trade_to_price
+		units=fraction_to_budget/pair_price
+		pair_price=budget/units
+	elif trade_to=='BTC':
+		tickers=fetch_prices(exchange,'BTC/USDT')
+		trade_to_price=float(tickers['close'])
+		tickers=fetch_prices(exchange,symbol)
+		pair_price=float(tickers['close'])
+		fraction_to_budget=budget/trade_to_price
+		units=fraction_to_budget/pair_price
+		pair_price=budget/units
+	elif trade_to=='BNB':
+		tickers=fetch_prices(exchange,'BNB/USDT')
+		trade_to_price=float(tickers['close'])
+		tickers=fetch_prices(exchange,symbol)
+		pair_price=float(tickers['close'])
+		fraction_to_budget=budget/trade_to_price
+		units=fraction_to_budget/pair_price
+		pair_price=budget/units
+	else:
+		tickers=fetch_prices(exchange,symbol)
+		pair_price=float(tickers['close'])
+
+	pair_price=float(pair_price)
+	return(pair_price)
+
+def wall_pos(symbol,stoploss,usd_limit):
+	
+	#Fucking jedi master shit, lets make sure that theres usd_limit above us in the buy book @ set our dynamic stoploss at that
+	pusd=float(price_usd(symbol))
+	exchange=get_exchange()
+	message=""
+	buy_book=exchange.fetch_order_book(symbol,100)
+	#print(buy_book)
+	pos=int(0)
+	book=buy_book['bids']
+
+	book.reverse()
+	tv_usd=0
+	for line in book:
+		k=line[0]
+		v=line[1]
+		v_usd=round(float(v)*pusd,2)
+		tv_usd=round(float(tv_usd+v_usd),2)
+		if k>=float(stoploss):
+			message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
+			if tv_usd>=usd_limit:
+				print(message)
+				return(pos)		
+		pos+=1
+	return(pos)	
+	print(message)
+	
 def work_units(symbol,budget):
 
 	symbol=symbol.upper()
@@ -142,7 +237,23 @@ def work_units(symbol,budget):
 	"balance_needed":str(fraction_to_budget)}
 	
 	return(bankinfo)
-	
+
+def fetch_last_order(exchange,symbol):
+	print("passed: "+str(symbol))
+	ret=exchange.fetch_closed_orders (symbol, 1);
+	print(ret)
+	if ret:
+		
+		data=ret[-1]['info']
+		side=data['side']
+		price=float(data['price'])
+		print("returning: 1")
+		return data
+	else:
+		print("returning: 0")
+		data=0
+		return data
+
 def spawn_bot(symbol):
 	
 	config = configparser.ConfigParser()
