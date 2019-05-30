@@ -304,6 +304,7 @@ def sell(bot, update,args):
 
 def fetch_last_order(exchange,symbol):
 	ret=exchange.fetch_closed_orders (symbol, 1);
+	print(ret)
 	if ret:
 		data=ret[-1]['info']
 		side=data['side']
@@ -907,6 +908,7 @@ def list_bots(bot, update, args):
 		print(symbol)
 			
 		bkey=str(symbol)+'-UPDATE'		
+		
 		if r.get(bkey):
 			message=r.get(bkey).decode('utf-8')
 		else:

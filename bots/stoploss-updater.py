@@ -35,14 +35,31 @@ import ccxt  # noqa: E402
 def wall_magic(symbol,last_stoploss):
 	
 	exchange=nickbot.get_exchange()
-	book=nickbot.fetch_order_book(exchange,symbol,'bids','100')
+	book=nickbot.fetch_order_book(exchange,symbol,'bids','500')
 
 	#New JEdimaster shit lets have at least $100k above us in buy order book set our dynamic stoploss @ that position in the book
 	
-	sl_pos=nickbot.wall_pos(symbol,last_stoploss,100000)
+	vol24=float(nickbot.volume24h_in_usd(symbol))
+	if vol24>10000000:
+		vlimit=vol24/100*0.75
+	else:
+		vlimit=vol24/100*1.5
+	
+	print(symbol)
+	print("DDDDDDDDDD V24: "+str(vol24))
+	print("VLIMIT: "+str(vlimit))
+		
+	sl_pos=nickbot.wall_pos(symbol,last_stoploss,vlimit)
+	if sl_pos==100:
+		sl_pos=99
 	print("LSL: "+str(last_stoploss))
 	print("SLP: "+str(sl_pos))
 	wall_stoploss=float(book[sl_pos][0])
+	if not wall_stoploss:
+		sl_pos=nickbot.wall_pos(symbol,last_stoploss,50000)		
+		if sl_pos==100:
+			sl_pos=99
+		wall_stoploss=float(book[sl_pos][0])
 	print("WSL: "+str(wall_stoploss))
 	return(wall_stoploss)
 
@@ -87,10 +104,7 @@ def loop_bots():
 
 		print("SLDB: "+str(symbol))
 		
-		print(symbol)
-		print(buy_array)
-		
-		if buy_array!=0:
+		if buy_array!='NULL':
 			units=float(buy_array['executedQty'])
 			
 			if buy_array['type']=='MARKET':
@@ -139,71 +153,98 @@ def loop_bots():
 			message_tg=message_tg+"\n<b>ORIGINAL STOPLOSS PRICE:</b> "+str(original_stoploss_price)
 			message_tg=message_tg+"\n<b>ORIGINAL STOPLOSS PERCENT:</b> "+str(original_stoploss_percent)
 	
-			ckey=str(bot_id)+'-CPS'
-			if r.hget(ckey,"checkpoints"):
-		
-				checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
-				checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
-				message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
-				message=message+"\nCHECKPOINTS: "+str(checkpoints)
 			
-				message_tg=message_tg+"\n<b>LAST CHECKPOINT:</b> "+str(checkpoint_stoploss)
-				message_tg=message_tg+"\n<b>CHECKPOINTS:</b> "+str(checkpoints)
-		
+			#if profit_total>0:
+			
+			print("Debut MOFO;"+str(profit_total))
+			#sys.exit("die")
+			dec=market_price/100*float(original_stoploss_percent)
+			new_stoploss=market_price-dec	
+			new_stoploss=round(new_stoploss,8)
 
-			bkey=str(symbol)+'-UPDATE'
-			r.set(bkey,message_tg)		
+			key=str(symbol)+'-SYSTEM-STOPLOSS'
+			
+			if mc.get(key):
+				last_stoploss=mc.get(key)		
+				print("SLP LAST STOPLOSS: "+str(last_stoploss))
+				print("SLP NEW STOPLOSS: "+str(new_stoploss))
+
+			print("bf new code;")
+			new_stoploss=float(wall_magic(symbol,last_stoploss))
+			print("NEW SL ADD: "+str(new_stoploss))
+			print(new_stoploss)
+							
+			print("FUCKINGDB NSL: "+str(symbol)+" "+str(new_stoploss))
+			print("FUCKINGDB LSL: "+str(symbol)+" "+str(last_stoploss))	
+			if new_stoploss>last_stoploss:
+				ikey=str(bot_id)+'-GOALPOSTS'
+				cycles=r.incr(ikey)
+					
+				gkey=str(bot_id)+'-GOALPOST-STOPLOSS'
+				r.set(gkey,new_stoploss)				
 	
-			print(message_tg)
-			
-			if profit_total>0:
-			
-				print("Debut MOFO;"+str(profit_total))
-				#sys.exit("die")
-				dec=market_price/100*float(original_stoploss_percent)
-				new_stoploss=market_price-dec	
-				new_stoploss=round(new_stoploss,8)
-
-			
-				key=str(symbol)+'-SYSTEM-STOPLOSS'
-			
-				if mc.get(key):
-					last_stoploss=mc.get(key)		
-					print("SLP LAST STOPLOSS: "+str(last_stoploss))
-					print("SLP NEW STOPLOSS: "+str(new_stoploss))
-
-				print("bf new code;")
-				new_stoploss=float(wall_magic(symbol,last_stoploss))
-				print("NEW SL ADD: "+str(new_stoploss))
-				print(new_stoploss)
-								
-				if new_stoploss>last_stoploss:
-					ikey=str(bot_id)+'-GOALPOSTS'
-					cycles=r.incr(ikey)
-						
-					gkey=str(bot_id)+'-GOALPOST-STOPLOSS'
-					r.set(gkey,new_stoploss)				
-	
-					print(str(symbol)+":::STOPLOSS/MOVER MOVED GOAL POST: "+str(cycles)+" Times!\n")
+				print(str(symbol)+":::STOPLOSS/MOVER MOVED GOAL POST: "+str(cycles)+" Times!\n")
 				
-					print("Goal Post Move Set :"+str(key)+" Stoploss to "+str(new_stoploss))
-					mc.set(key,new_stoploss,86400)	
+				print("Goal Post Move Set :"+str(key)+" Stoploss to "+str(new_stoploss))
+				
+				key=str(symbol)+'-SYSTEM-STOPLOSS'
+				mc.set(key,new_stoploss,86400)	
 					
-					ckey=str(bot_id)+'-CPS'
-					r.hincrby(ckey, 'checkpoints',1)
-					r.hset(ckey, 'checkpoint_stoploss',new_stoploss)
+				ckey=str(bot_id)+'-CPS'
+				r.hincrby(ckey, 'checkpoints',1)
+				r.hset(ckey, 'checkpoint_stoploss',new_stoploss)
+
+				ckey=str(bot_id)+'-CPS'
+				if r.hget(ckey,"checkpoints"):
+		
+					checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
+					checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
+					message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
+					message=message+"\nCHECKPOINTS: "+str(checkpoints)
+			
+					message_tg=message_tg+"\n<b>LAST CHECKPOINT:</b> "+str(checkpoint_stoploss)
+					message_tg=message_tg+"\n<b>CHECKPOINTS:</b> "+str(checkpoints)
+		
+					bkey=str(symbol)+'-UPDATE'
+					r.setex(key,1,bkey)
+					time.sleep(1)
+
+					print("Db Deleting: "+str(bkey))
+					r.set(bkey,message_tg)		
+
+					print(message_tg)
 					
-				elif last_stoploss==0:
-					print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
-					key=str(symbol)+'-SYSTEM-STOPLOSS'
-					mc.set(key,original_stoploss_price,86400)	
+			elif last_stoploss==0:
+				print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
+				key=str(symbol)+'-SYSTEM-STOPLOSS'
+				mc.set(key,original_stoploss_price,86400)	
+
+				ckey=str(bot_id)+'-CPS'
+				if r.hget(ckey,"checkpoints"):
+		
+					checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
+					checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
+					message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
+					message=message+"\nCHECKPOINTS: "+str(checkpoints)
+			
+					message_tg=message_tg+"\n<b>LAST CHECKPOINT:</b> "+str(checkpoint_stoploss)
+					message_tg=message_tg+"\n<b>CHECKPOINTS:</b> "+str(checkpoints)
+		
+					bkey=str(symbol)+'-UPDATE'
+					r.setex(key,1,bkey)
+					time.sleep(1)
+
+					print("Db Deleting: "+str(bkey))
+					r.set(bkey,message_tg)		
+
+					print(message_tg)
 
 while True:
-	#try:
-	loop_bots()
-	print("STOPLOSS UPDATER")
-	#except:
-	#print("")
+	try:
+		loop_bots()
+		print("STOPLOSS UPDATER")
+	except:
+		print("")
 	time.sleep(5)		
 
 

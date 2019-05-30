@@ -154,6 +154,7 @@ def get_sentiment(symbol):
 
 	dat="\n<b>:::SENTIMENT DATA:::\nBUYS:</b> "+str(buys)+' ('+str(buy_ratio)+'%)\n<b>SELLS:</b> '+str(sells)+' ('+str(sell_ratio)+'%)'+"\n"+'<b>PRICE UP RATIO:</b> '+str(price_up)+' ('+str(price_up_ratio)+'%)'
 	return(dat)
+	
 def mojo(pair,price_now):
 
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -554,6 +555,17 @@ def main():
 						redis_server.set(redis_key, str(price))
 						
 						#print("DB RED: set "+str(redis_key)+' last_price'+str(price))
+						
+						#Blacklist from rebuying a coin for 30 minutes
+						blacklisted=0
+						blacklisted_key=redis_key+"-BLACKLIST"
+						
+						rk="bconfig-"+bot_name
+						blacklisted_key=rk+"-BLACKLIST"
+
+						if redis_server.get(blacklisted_key):
+							blacklisted=1
+	
 						if fifteen_mins>=1:
 							dtoday=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
 							moonkey=str(dtoday)+'-mooning'
@@ -618,8 +630,8 @@ def main():
 									broadcast_moon('506872080',bcdb)
 									rsi_symbol=str(symbol)
 									symbol=str(coin)
-									buy_pos=int(10)
-									sell_pos=int(10)
+									buy_pos=int(1)
+									sell_pos=int(1)
 									stoploss_percent=float(4)
 									use_stoploss=int(1)
 									candle_size=str('5m')

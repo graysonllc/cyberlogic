@@ -28,47 +28,6 @@ import talib
 import numpy as np
 import ccxt  # noqa: E402
 
-def log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low):
-
-	key=str(symbol)+'-SYSTEM-STOPLOSS'
-	if mc.get(key):
-		stoploss_price=float(mc.get(key))
-	
-	config = configparser.ConfigParser()
-	config.read('/root/akeys/b.conf')
-
-	mysql_username=config['mysql']['MYSQL_USERNAME']
-	mysql_password=config['mysql']['MYSQL_PASSWORD']
-	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
-	mysql_database=config['mysql']['MYSQL_DATABASE']
-
-	market_price=float(close)
-	
-	profit_per_unit=market_price-buy_price
-	profit=float(profit_per_unit*units)
-	profit=round(profit,8)
-	prices = [buy_price,market_price]
-	for a, b in zip(prices[::1], prices[1::1]):
-		profit_percent=100 * (b - a) / a
-		profit_percent=round(profit_percent,2)
-
-	total_invest=units*buy_price
-	total_now=units*market_price	
-
-	total_now=float(total_now)
-	total_now=round(total_now,8)
-
-	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
-	cursor = db.cursor()
-	
-	sql = """
-		INSERT INTO at_history(date,date_time,timestamp,symbol,rsi_symbol,trade_from,trade_to,buy_price,units,stoploss_price,profit,profit_percent,total_invest,total_now,bid,last,ask,open,close,high,low)
-		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-	"""
-	print(sql)
-	cursor.execute(sql,(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,stoploss_price,profit,profit_percent,total_invest,total_now,bid,last,ask,open,close,high,low))
-	db.close()
-	
 def log_redis(redis_key,message,c):
 
 	if c>10000:
@@ -157,6 +116,10 @@ def delete_bot(symbol):
 	r.srem("botlist", bot_name)
 	r.delete(bot_name)
 	redis_key="bconfig-"+bot_name
+	
+	blacklisted_key=redis_key+"-BLACKLIST"
+	r.setex(blacklisted_key,1800,1)
+
 	all_keys = list(r.hgetall(redis_key).keys())
 	r.hdel(redis_key, "*")	
 	config = configparser.ConfigParser()
@@ -378,7 +341,6 @@ def main(exchange,symbol,c):
 		last_array=mc.get(lo_key)
 		last_price=float(last_array['price'])
 		last_type=last_array['side']
-		buy_price=last_price
 	else:
 		#Cache last order in ram for 60 seconds to speed up api calls
 		print("Db: lT: "+str(symbol))
@@ -386,11 +348,10 @@ def main(exchange,symbol,c):
 		if last_array!=0:
 			last_price=float(last_array['price'])
 			last_type=last_array['side']
-			buy_price=last_price
 			mc.set(lo_key,last_array,60)
 		else:
 			last_type='NULL'
-
+			
 	if open_order:
 		for order in orders:
 			order_symbol=order['info']['symbol']
@@ -445,7 +406,6 @@ def main(exchange,symbol,c):
 
 			message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
 			log_redis(redis_log,message,c)
-			log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low)
 			print(message)
 
 			if last <= stoploss_price or last <= original_stoploss_price:
@@ -473,7 +433,7 @@ def main(exchange,symbol,c):
 						key=str(symbol)+'-SL'	
 						mc.set(key,1,86400)			
 	else:
-				
+		
 		rsikey="rsi"+str(symbol)
 		rsi=get_rsi(rsi_symbol,candle_size)
 		print("RSI")

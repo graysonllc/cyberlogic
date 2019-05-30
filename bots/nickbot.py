@@ -65,6 +65,33 @@ def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
     return head + replace_with + tail
 
+def volume24h_in_usd(symbol):
+
+	exchange=get_exchange()
+
+	symbol=symbol.upper()
+	ticker_symbol=symbol
+	tickers=fetch_prices(exchange,ticker_symbol)
+
+	v24=tickers['quoteVolume']
+
+	if symbol.endswith('BTC'):
+		tickers=fetch_prices(exchange,'BTC/USDT')
+		trade_to_price=float(tickers['close'])
+	elif symbol.endswith('ETH'):
+		tickers=fetch_prices(exchange,'ETH/USDT')
+		trade_to_price=float(tickers['close'])
+	elif symbol.endswith('BNB'):
+		tickers=fetch_prices(exchange,'BNB/USDT')
+		trade_to_price=float(tickers['close'])
+	else:
+		trade_to_price=1
+
+	p24=v24*trade_to_price
+	p24=float(p24)
+	
+	return(p24)
+	
 def price_usd(symbol):
 
 	symbol=symbol.upper()
@@ -156,6 +183,7 @@ def wall_pos(symbol,stoploss,usd_limit):
 			message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
 			if tv_usd>=usd_limit:
 				print(message)
+				pos=pos-1
 				return(pos)		
 		pos+=1
 	return(pos)	
@@ -250,9 +278,8 @@ def fetch_last_order(exchange,symbol):
 		print("returning: 1")
 		return data
 	else:
-		print("returning: 0")
-		data=0
-		return data
+		print("returning: NULL")
+		return("NULL")
 
 def spawn_bot(symbol):
 	
