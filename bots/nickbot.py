@@ -266,6 +266,21 @@ def work_units(symbol,budget):
 	
 	return(bankinfo)
 
+def fetch_last_buy_order(exchange,symbol):
+	
+	ret=exchange.fetch_closed_orders (symbol, 10);
+	if ret:
+		for order in ret:
+			data=order['info']
+			side=data['side']
+			price=float(data['price'])
+			if side=="BUY":
+				bdata=data
+		return(bdata)
+	else:
+		print("returning: NULL")
+		return("NULL")
+
 def fetch_last_order(exchange,symbol):
 	print("passed: "+str(symbol))
 	ret=exchange.fetch_closed_orders (symbol, 1);

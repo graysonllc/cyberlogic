@@ -100,7 +100,7 @@ def loop_bots():
 			buy_array=mc.get(t_key)
 		else:
 			#Cache last order in ram for 60 seconds to speed up api calls
-			buy_array=nickbot.fetch_last_order(exchange,symbol)
+			buy_array=nickbot.fetch_last_buy_order(exchange,symbol)
 
 		print("SLDB: "+str(symbol))
 		
