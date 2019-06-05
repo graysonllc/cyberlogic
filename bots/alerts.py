@@ -560,7 +560,7 @@ def main():
 						blacklisted=0
 						blacklisted_key=redis_key+"-BLACKLIST"
 						
-						rk="bconfig-"+bot_name
+						rk="bconfig-"+symbol
 						blacklisted_key=rk+"-BLACKLIST"
 
 						if redis_server.get(blacklisted_key):
@@ -570,7 +570,7 @@ def main():
 							dtoday=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
 							moonkey=str(dtoday)+'-mooning'
 							broadcast_moon('506872080',data)	
-
+							broadcast_moon('446619309',data)
 							print("Sent a moon shot alert: key:"+str(moonkey))
 							redis_server.sadd(moonkey, symbol)
 							
@@ -610,9 +610,9 @@ def main():
 							moonkey2=str(dtoday)+'-mooning-np'
 							redis_server.sadd(moonkey2, ticker_symbol)
 
-							max_bots=10
+							max_bots=20
 							#$100 bucks budget per bot
-							budget=60
+							budget=120
 							#Lets Work out the number of units here
 							bankinfo=nickbot.work_units(coin,budget)
 							units=float(bankinfo["units"])
@@ -628,10 +628,12 @@ def main():
 								if gotbot(coin)!=1 and bots_running<=max_bots:					
 									bcdb='lets spawn an auto trader bot for '+str(coin)+' budget: '+str(budget)+' Units: '+str(units)
 									broadcast_moon('506872080',bcdb)
+									broadcast_moon('446619309',data)
+
 									rsi_symbol=str(symbol)
 									symbol=str(coin)
-									buy_pos=int(1)
-									sell_pos=int(1)
+									buy_pos=int(5)
+									sell_pos=int(5)
 									stoploss_percent=float(4)
 									use_stoploss=int(1)
 									candle_size=str('5m')

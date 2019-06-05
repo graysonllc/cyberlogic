@@ -20,6 +20,8 @@ import time
 import shlex
 import argparse
 import heapq
+import nickbot
+
 config = configparser.ConfigParser()
 config.read('/root/akeys/b.conf')
 mysql_username=config['mysql']['MYSQL_USERNAME']
@@ -46,34 +48,7 @@ updater = Updater(token=telegram_id)
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-def get_exchange():
-	
-	#Read in our apikeys and accounts
-	config = configparser.ConfigParser()
-	config.read('/root/akeys/b.conf')
-	conf=config['binance']
-	
-	binance_api_key=config['binance']['API_KEY']
-	binance_api_secret=config['binance']['API_SECRET']
-	
-	exchange = ccxt.binance({
-    'apiKey': binance_api_key,
-    'secret': binance_api_secret,
-    'enableRateLimit': True,
-    'rateLimit': 3600,
-    'verbose': False,  # switch it to False if you don't want the HTTP log
-	})
-	return(exchange)
 		
-def get_price(exchange,symbol):
-	
-	symbol=symbol.upper()	
-	ticker = exchange.fetch_ticker(symbol.upper())
-	price=float(ticker['last'])
-	return(price)
-	
-
 def query_ath(name):
 
 	try:
@@ -269,10 +244,10 @@ def sell(bot, update,args):
 
 	symbol=args[0].upper()
 	
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 
 	bid=update.message.from_user.id
-	price=get_price(exchange,symbol)
+	price=nickbot.get_price(exchange,symbol)
 	
 	ret=exchange.fetch_closed_orders (symbol, 1);
 	if ret:
@@ -321,7 +296,7 @@ def cashout(bot, update, args):
 
 	revkey='REVERSE-'+str(id)
 	symbol=r.get(revkey).decode('utf-8')			
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	t_key="TTT-"+str(symbol)
 	if mc.get(t_key):
 		buy_array=mc.get(t_key)
@@ -332,7 +307,7 @@ def cashout(bot, update, args):
 
 	units=float(buy_array['executedQty'])
 
-	book=fetch_order_book(exchange,symbol,'bids',1)
+	book=nickbot.fetch_order_book(exchange,symbol,'bids',1)
 	sell_price=float(book[0][0])
 	
 	#Execute Sell Order
@@ -524,23 +499,12 @@ def add_bot(bot, update, args):
 
 		if instant_market_buy=="yes":
 			print("")	
-			exchange=get_exchange()
-			
-			#change from market buy to scraped order book buy
-			#ret=exchange.create_order (symbol, 'MARKET', 'BUY', units)
-			exchange=get_exchange()
-			buy_book=fetch_order_book(exchange,symbol,'bids','1000')
-			#print(buy_book)
-			#buy_dic={}
-	
-			#for k,v in buy_book:
-			#	buy_dic[k]=v
-			#
-			#buy_walls=heapq.nlargest(30, buy_dic.items(), key=itemgetter(1))
-			#buy_price=float(buy_walls[0][0])
-			#buy_price_add=buy_price/100*0.5
+			exchange=nickbot.get_exchange()
+
+			buy_book=nickbot.fetch_order_book(exchange,symbol,'bids','1000')
 			buy_pos=int(buy_pos)
 			buy_price=float(buy_book[buy_pos][0])
+
 			print("ALERT ALERT ALERT: BPPPP"+str(buy_price))
 			print(buy_price)
 			ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)			
@@ -668,22 +632,23 @@ def bookintel(bot, update, args):
 	start_price=float(args[2])
 	end_price=float(args[3])
 	
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	
 	p=0
 	total_volume=0
 	if book=="buy":
-		bids=fetch_order_book(exchange,symbol,'bids','1000')
+		bids=nickbot.fetch_order_book(exchange,symbol,'bids','1000')
 		p=1
 	elif book=="sell":
-		bids=fetch_order_book(exchange,symbol,'asks','500')	
+		bids=nickbot.fetch_order_book(exchange,symbol,'asks','500')	
 		p=1
+	print(bids)
 	if p==1:
 		for k,v in bids:
 			if k>=start_price and k<=end_price:
 				total_volume+=v
 			
-		ret="<b>:::VOLUME INTEL FOR "+str(symbol).upper()+"</b>\n"
+		ret="<b>:::VOLUME INTEL FOR "+str(symbol).upper()+" BOOK - "+str(book)+" </b>\n"
 		ret=ret+"<b>:::PRICE BETWEEN: "+str(start_price)+" AND: "+str(end_price)+"</b>\n"
 		ret=ret+"<b>:::RESULT IS: "+str(total_volume)+"</b>\n"	
 		bot.send_message(chat_id=update.message.chat_id, text=ret,parse_mode= 'HTML')
@@ -692,9 +657,9 @@ def bookintel(bot, update, args):
 def walls(bot, update, args):
 	
 	symbol=args[0].upper()
-	exchange=get_exchange()
-	buy_book=fetch_order_book(exchange,symbol,'bids','500')
-	sell_book=fetch_order_book(exchange,symbol,'asks','500')
+	exchange=nickbot.get_exchange()
+	buy_book=nickbot.fetch_order_book(exchange,symbol,'bids','500')
+	sell_book=nickbot.fetch_order_book(exchange,symbol,'asks','500')
 
 	buy_dic={}
 	sell_dic={}
@@ -759,7 +724,7 @@ def alerts(bot,update,args):
 	pump_key=str(date_today+"-ALERTLIST")
 	pump_coins=r.smembers(pump_key)
 
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	
 	for coin in pump_coins:
 		coin=coin.decode('utf-8')
@@ -895,27 +860,101 @@ def alerts(bot,update,args):
 						bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
 	
 def list_bots(bot, update, args):
-	#args[0]="twat"
-	#meh=args[0]
+	
 	botlist=r.smembers("botlist")
-
-	#txt="cunt"
-	#bot.send_message(chat_id=update.message.chat_id, text=txt)	
+	exchange=nickbot.get_exchange()
 	
 	for bot_name in botlist:
 		bot_name=bot_name.decode('utf-8')
 		symbol=bot_name
 		print(symbol)
-			
-		bkey=str(symbol)+'-UPDATE'		
 		
-		if r.get(bkey):
-			message=r.get(bkey).decode('utf-8')
-		else:
-			message=str(bot_name)
-		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
-		#bot.send_message(chat_id=update.message.chat_id, text=message)
+		ts=float(r.get(bot_name))
+		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+		redis_key="bconfig-"+symbol		
+		last_stoploss=0
+		all=r.hgetall(redis_key)
+		
+		trade_from=r.hget(redis_key,'trade_from').decode('utf-8')
+		trade_to=r.hget(redis_key,'trade_to').decode('utf-8')
+		bot_id=r.hget(redis_key,'id').decode('utf-8')
+		
+		ts=float(r.get(bot_name).decode('utf-8'))				
+		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")				
+		
+		key=str(symbol)+'-TRADES'	
+		key=str(symbol)+'-LAST-PRICE'
+		if r.get(key):
+			market_price=float(r.get(key))
 
+		t_key="TTT-"+str(symbol)
+		buy_array=nickbot.fetch_last_buy_order(exchange,symbol)
+
+		print("SLDB: "+str(symbol))
+		
+		print(buy_array)
+		
+		if buy_array!='NULL':
+			units=float(buy_array['executedQty'])
+			
+			if buy_array['type']=='MARKET':
+				print(buy_array)	
+				buy_price=float(buy_array['cummulativeQuoteQty'])/units
+				print("DB1: "+str(buy_price))
+			else:
+				buy_price=float(buy_array['price'])
+				print("DB2: "+str(buy_price))
+
+			profit_per_unit=market_price-buy_price
+			profit_total=float(profit_per_unit*units)
+			profit_total=round(profit_total,8)
+			prices = [buy_price,market_price]
+			for a, b in zip(prices[::1], prices[1::1]):
+				percent=100 * (b - a) / a
+				percent=round(percent,2)
+
+			investment_start=units*buy_price
+			investment_now=units*market_price	
+		
+			investment_now=float(investment_now)
+			investment_now=round(investment_now,8)
+	
+		#Stoploss Stuff
+		original_stoploss_percent=r.hget(redis_key,'stoploss_percent').decode('utf-8')
+		original_stoploss_price_ded=buy_price/100*float(original_stoploss_percent)
+		original_stoploss_price=float(buy_price-original_stoploss_price_ded)
+		original_stoploss_price=round(original_stoploss_price,8)
+		
+		message=":::BOT " +str(symbol)+"\nSTARTED: "+str(running)+str("\nBUY PRICE: ")+str(buy_price)+"\nPRICE NOW: "+str(market_price)+"\nUNITS: "+str(units)
+		message=message+"\nVALUE START "+'('+str(trade_to)+'): '+str(investment_start)
+		message=message+"\nVALUE NOW "+'('+str(trade_to)+'): '+str(investment_now)
+		message=message+"\nP&L: "+str(profit_total)+' ('+str(percent)+'%)'
+		message=message+"\nBOT ID: "+str(bot_id)
+		message=message+"\nORIGINAL STOPLOSS PRICE: "+str(original_stoploss_price)
+		message=message+"\nORIGINAL STOPLOSS PERCENT: "+str(original_stoploss_percent)
+	
+		ckey=str(bot_id)+'-CPS'
+		
+		if r.hget(ckey,"checkpoints"):
+			checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
+			checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
+			message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
+			message=message+"\nCHECKPOINTS: "+str(checkpoints)
+			
+		print("Debut MOFO;"+str(profit_total))
+		#sys.exit("die")
+		dec=market_price/100*float(original_stoploss_percent)
+		new_stoploss=market_price-dec	
+		new_stoploss=round(new_stoploss,8)
+
+		key=str(symbol)+'-SYSTEM-STOPLOSS'
+			
+		if mc.get(key):
+			last_stoploss=mc.get(key)		
+			print("SLP LAST STOPLOSS: "+str(last_stoploss))
+			print("SLP NEW STOPLOSS: "+str(new_stoploss))
+		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
+		
 def stoploss(bot, update,args):	
 	symbol=args[0].upper()
 	action=str(args[1].lower())
@@ -944,13 +983,13 @@ def stoploss(bot, update,args):
 		stoploss_percent=float(args[1].lower())
 		buyback_percent=float(args[2].lower())
 
-		exchange=get_exchange()
+		exchange=nickbot.get_exchange()
 		
 		if float(stoploss_percent)>0:
 			bid=update.message.from_user.id
-			price=get_price(exchange,symbol)
+			price=nickbot.get_price(exchange,symbol)
 	
-			ret=exchange.fetch_closed_orders (symbol, 1);
+			ret=nickbot.exchange.fetch_closed_orders (symbol, 1);
 			if ret:
 				data=ret[-1]['info']
 				side=data['side']
@@ -1000,10 +1039,10 @@ def stoploss(bot, update,args):
 def price(bot, update,args):	
 	symbol=args[0].upper()
 	
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 
 	bid=update.message.from_user.id
-	price=get_price(exchange,symbol)
+	price=nickbot.get_price(exchange,symbol)
 	
 	ret=exchange.fetch_closed_orders (symbol, 1);
 	if ret:

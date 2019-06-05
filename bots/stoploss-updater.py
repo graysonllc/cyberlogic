@@ -41,9 +41,9 @@ def wall_magic(symbol,last_stoploss):
 	
 	vol24=float(nickbot.volume24h_in_usd(symbol))
 	if vol24>10000000:
-		vlimit=vol24/100*0.75
+		vlimit=vol24/100*1.25
 	else:
-		vlimit=vol24/100*1.5
+		vlimit=vol24/100*2
 	
 	print(symbol)
 	print("DDDDDDDDDD V24: "+str(vol24))
@@ -206,7 +206,7 @@ def loop_bots():
 					message_tg=message_tg+"\n<b>CHECKPOINTS:</b> "+str(checkpoints)
 		
 					bkey=str(symbol)+'-UPDATE'
-					r.setex(key,1,bkey)
+					r.setex(bkey,1,"N")
 					time.sleep(1)
 
 					print("Db Deleting: "+str(bkey))

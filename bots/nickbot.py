@@ -65,6 +65,14 @@ def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
     return head + replace_with + tail
 
+def get_price(exchange,symbol):
+	
+	symbol=symbol.upper()	
+	ticker = exchange.fetch_ticker(symbol.upper())
+	print(str(ticker))
+	price=float(ticker['last'])
+	return(price)
+	
 def volume24h_in_usd(symbol):
 
 	exchange=get_exchange()
@@ -254,12 +262,12 @@ def work_units(symbol,budget):
 		fraction_to_budget=budget/trade_to_price
 		units=fraction_to_budget/pair_price
 		
-	print("Trading From: "+str(trade_from))
-	print("Trade To: "+str(trade_to))
-	print(str(trade_to)+ "Price: "+str(trade_to_price))
-	print("Pair Price: "+str(pair_price))
-	print("Fraction Of "+str(trade_to)+" To "+str(budget)+" is: "+str(fraction_to_budget))
-	print("Units to Execute is: "+str(units))	
+	#print("Trading From: "+str(trade_from))
+	#print("Trade To: "+str(trade_to))
+	#print(str(trade_to)+ "Price: "+str(trade_to_price))
+	#print("Pair Price: "+str(pair_price))
+	#print("Fraction Of "+str(trade_to)+" To "+str(budget)+" is: "+str(fraction_to_budget))
+	#print("Units to Execute is: "+str(units))	
 	
 	bankinfo = {"units":str(units),
 	"balance_needed":str(fraction_to_budget)}
