@@ -222,7 +222,7 @@ def loop_bots():
 		
 					checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
 					checkpoint_stoploss_trigger_add=float(check_point_stoploss)/100*0.5
-					checkpoint_stoploss_trigger=flot(checkpoint_stoploss)+float(checkpoint_stoploss_trigger_add)
+					checkpoint_stoploss_trigger=float(checkpoint_stoploss)+float(checkpoint_stoploss_trigger_add)
 					r.hset(ckey, 'checkpoint_trigger',checkpoint_stoploss_trigger)
 					checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
 					message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
