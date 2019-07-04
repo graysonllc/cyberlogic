@@ -15,6 +15,9 @@ import configparser
 from datetime import datetime
 import subprocess
 import heapq
+import nickbot
+
+logging.basicConfig(filename='../logs/debug.log',level=logging.DEBUG)
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -41,6 +44,48 @@ def log_redis(redis_key,message,c):
 	print("Writing to redis: "+str(redis_key))
 	print(message)
 	r.rpush(redis_key,message)
+
+def log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id):
+
+	key=str(symbol)+'-SYSTEM-STOPLOSS'
+	if mc.get(key):
+		stoploss_price=float(mc.get(key))
+	else:
+		stoploss_price=0
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	market_price=float(close)
+	
+	profit_per_unit=market_price-buy_price
+	profit=float(profit_per_unit*units)
+	profit=round(profit,8)
+	prices = [buy_price,market_price]
+	for a, b in zip(prices[::1], prices[1::1]):
+		profit_percent=100 * (b - a) / a
+		profit_percent=round(profit_percent,2)
+
+	total_invest=units*buy_price
+	total_now=units*market_price	
+
+	total_now=float(total_now)
+	total_now=round(total_now,8)
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = """
+		INSERT INTO at_history(date,date_time,timestamp,symbol,rsi_symbol,trade_from,trade_to,buy_price,units,stoploss_price,profit,profit_percent,total_invest,total_now,bid,last,ask,open,close,high,low,bot_id)
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	"""
+	print(sql)
+	cursor.execute(sql,(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,stoploss_price,profit,profit_percent,total_invest,total_now,bid,last,ask,open,close,high,low,bot_id))
+	db.close()
 
 def fetch_wall_book(exchange,symbol,type,qlimit):
 	limit = 1000
@@ -164,9 +209,9 @@ def fetch_prices(exchange, symbol):
    
 
 def fetch_last_order(exchange,symbol):
-	print("passed: "+str(symbol))
+	#print("passed: "+str(symbol))
 	ret=exchange.fetch_closed_orders (symbol, 1);
-	print(ret)
+	#print(ret)
 	if ret:
 		
 		data=ret[-1]['info']
@@ -235,12 +280,15 @@ def main(exchange,symbol,c):
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
 	conn = redis.Redis('127.0.0.1')
-
+	
+	redis_order_log="ORDERLOG-"+symbol
 	redis_log="LOG-"+symbol
 	redis_trade_log="TRADELOG-"+symbol
 	redis_key="bconfig-"+symbol
 	redis_rsi_log="RSILOG-"+symbol
 	ret=0
+
+	bot_id=conn.hget(redis_key,'id').decode('utf-8')
 	trading_on=conn.hget(redis_key,"trading_on")
 	trading_on=trading_on.decode('utf-8')
 	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
@@ -286,7 +334,8 @@ def main(exchange,symbol,c):
 	units=float(units)
 	sell_pos=int(sell_pos)
 	buy_pos=int(buy_pos)
-	message="Exchange: "+trading_on+"\tExchange: "+trading_on+"\tTrade Pair: "+str(symbol)+"\tUnits: "+str(units)+"\tBuy Book Scrape Position: "+str(buy_pos)+"\tSell Book Scrape Position: "+str(sell_pos)+"\tRSI Buy: "+str(rsi_buy)+"\tRSI Sell: "+str(rsi_sell)+"\tStoploss Percent: "+str(stoploss_percent)+"\tSafeguard Percent: "+str(safeguard_percent)+"\tEnable Safeguard: "+str(enable_safeguard)+"\tCandle Size: "+candle_size+"\tUse Stoploss: "+str(use_stoploss)+"\tLive Trading Enabled: "+live
+	
+	message="Exchange: "+trading_on+"\tExchange: "+trading_on+"\tTrade Pair: "+str(symbol)+"\tUnits: "+str(units)+"\tBuy Book Scrape Position: "+str(buy_pos)+"\tSell Book Scrape Position: "+str(sell_pos)+"\tRSI Buy: "+str(rsi_buy)+"\tRSI Sell: "+str(rsi_sell)+"\tStoploss Percent: "+str(stoploss_percent)+"\tSafeguard Percent: "+str(safeguard_percent)+"\tEnable Safeguard: "+str(enable_safeguard)+"\tCandle Size: "+candle_size+"\tUse Stoploss: "+str(use_stoploss)+"\tLive Trading Enabled: "+live+" BOID: "+str(bot_id)
 
 	if c==0:
 		log_redis(redis_log,message,c)
@@ -335,12 +384,15 @@ def main(exchange,symbol,c):
 	key=str(symbol)+'-LAST-PRICE'	
 	#mc.set(key,close,86400)
 	r.setex(key,3600,close)
-
+	print("ATDB: "+str(key)+"\t"+str(close))
+	
+	
 	lo_key="last_order-"+str(symbol)
 	if mc.get(lo_key):
 		last_array=mc.get(lo_key)
 		last_price=float(last_array['price'])
 		last_type=last_array['side']
+		buy_price=last_price
 	else:
 		#Cache last order in ram for 60 seconds to speed up api calls
 		print("Db: lT: "+str(symbol))
@@ -348,6 +400,7 @@ def main(exchange,symbol,c):
 		if last_array!=0:
 			last_price=float(last_array['price'])
 			last_type=last_array['side']
+			buy_price=last_price			
 			mc.set(lo_key,last_array,60)
 		else:
 			last_type='NULL'
@@ -366,7 +419,7 @@ def main(exchange,symbol,c):
 				start_time=order_timestamp
 				elapsed = time.time() - start_time
 				elapsed=round(elapsed)
-				
+								
 				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+"\n<b>OPEN FOR: </b> "+str(elapsed)+" Seconds\n"+"<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
 				if open_type=='BUY' and float(elapsed)>1200:
 					exchange.cancelOrder(order_id,symbol)
@@ -383,6 +436,8 @@ def main(exchange,symbol,c):
 		return("open")
 
 	print("LT: "+str(last_type))
+	
+	print("USL: "+str(use_stoploss))
 	if use_stoploss=="yes" or use_stoploss==1:
 			
 		if last_type=='BUY':
@@ -406,6 +461,7 @@ def main(exchange,symbol,c):
 
 			message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
 			log_redis(redis_log,message,c)
+			log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
 			print(message)
 
 			if last <= stoploss_price or last <= original_stoploss_price:
@@ -419,9 +475,15 @@ def main(exchange,symbol,c):
 				broadcast(message)
 				print(message)
 				log_redis(redis_trade_log,message,c)
-							
+				log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
 				if live=="yes":
+				
 					ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
+					order_id=ret['info']['orderId']
+					m=str(bot_id)+"\t"+str(order_id)+"\tSELL\t"+str(symbol)+"\t"+str(rsi_symbol)+"\t"+str(trade_from)+"\t"+str(trade_to)+"\t"+str(sell_price)+"\t"+str(units)
+					log_redis(redis_order_log,m,c)
+					logging.debug(m)
+					nickbot.log_order(exchange,bot_id,order_id,'SELL',symbol,rsi_symbol,trade_from,trade_to,sell_price,units)
 					broadcast(message)
 
 					message="Killing Bot"
@@ -523,9 +585,16 @@ def main(exchange,symbol,c):
 					message="<b>ALERT:: - "+str(symbol)+" STOPLOSS HIT</b> <b>SELLING:</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(sell_price)+" <b>LAST BUY @:</b>"+str(last_price)
 					broadcast(message)
 					log_redis(redis_trade_log,message,c)
+					
+					log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
 					if live=="yes":
 						ret=exchange.create_order (symbol, 'limit', 'sell', units, sell_price)
-							
+						order_id=int(ret['info']['orderId'])
+						m=str(bot_id)+"\t"+str(order_id)+"\tSELL\t"+str(symbol)+"\t"+str(rsi_symbol)+"\t"+str(trade_from)+"\t"+str(trade_to)+"\t"+str(sell_price)+"\t"+str(units)
+						log_redis(redis_order_log,m,c)
+						logging.debug(m)
+						nickbot.log_order(exchange,bot_id,order_id,'SELL',symbol,rsi_symbol,trade_from,trade_to,sell_price,units)
+					
 					if enable_buybacks=='no':
 						message="killing script no buyback here :"+str(sleep_for_after_stoploss_executed)+ "seconds now giving market time to adjust our dough is tethered"
 						delete_bot(symbol)
@@ -551,12 +620,17 @@ def main(exchange,symbol,c):
 	
 			message="<b>ALERT:: - "+str(symbol)+" BUYING</b> "+str(units)+"UNITS\t<b>BUY @:</b> "+str(price)+"\t<b>LAST SELL @:</b> "+str(last_price)
 			log_redis(redis_trade_log,message,c)
-
+			log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
 			broadcast(message)
 			print(ret)
 			message="Live Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh: "+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n"
 			if live=="yes":
 				ret=exchange.create_order (symbol, 'limit', 'buy', units, price)
+				order_id=int(ret['info']['orderId'])
+				m=str(bot_id)+"\t"+str(order_id)+"\tBUY\t"+str(symbol)+"\t"+str(rsi_symbol)+"\t"+str(trade_from)+"\t"+str(trade_to)+"\t"+str(price)+"\t"+str(units)
+				log_redis(redis_order_log,m,c)
+				logging.debug(m)
+				#log_order(bot_id,order_id,'BUY',symbol,rsi_symbol,trade_from,trade_to,price,units)
 				print(ret)
 
 			log_redis(redis_trade_log,message,c)
@@ -582,13 +656,21 @@ def main(exchange,symbol,c):
 			message="<b>ALERT:: - "+str(symbol)+" SELLING</b> "+str(units)+"UNITS\t<b>SELL @:</b> "+str(price)+"\t<b>LAST BUY:</b> "+str(last_price)
 			broadcast(message)
 			log_redis(redis_trade_log,message,c)
+			log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
 
 			if live=="yes":
 				ret=exchange.create_order (symbol, 'limit', 'sell', units, price)
+				order_id=int(ret['info']['orderId'])
+				m=str(bot_id)+"\t"+str(order_id)+"\tSELL\t"+str(symbol)+"\t"+str(rsi_symbol)+"\t"+str(trade_from)+"\t"+str(trade_to)+"\t"+str(price)+"\t"+str(units)
+				log_redis(redis_order_log,m,c)
+				logging.debug(m)
+				nickbot.log_order(exchange,bot_id,order_id,'SELL',symbol,rsi_symbol,trade_from,trade_to,price,units)
 				print(ret)
 			message="\nLive Ticker:\nBid: "+str(bid)+" Ask: "+str(ask)+ " Last: "+str(last)+ "\nHigh:"+str(high)+" Low: "+str(low)+"\nOpen: "+str(open)+" Close: "+str(close)+"\n"
 			
 			log_redis(redis_trade_log,message,c)
+			log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
+			
 			if enable_buybacks=='no':
 				message="killing script no buyback here success sell without stoploss hitting"
 				delete_bot(symbol)

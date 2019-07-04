@@ -274,7 +274,9 @@ def sell(bot, update,args):
 		message=str(symbol)+"Selling Now!!! Price: "+str(price)+" Last Price: "+str(last_price)+" Units: "+str(units)+" Profit: "+str(profit)+' ('+str(percent)+'%)'
 
 		ret=exchange.create_order (symbol, 'limit', 'sell', units, price)
-
+		order_id=int(ret['info']['orderId'])
+		log_order(bot_id,order_id,'SELL',symbol,rsi_symbol,trade_from,trade_to,price,units)
+					
 		bot.send_message(chat_id=update.message.chat_id, text=message)
 
 def fetch_last_order(exchange,symbol):
@@ -293,7 +295,7 @@ def fetch_last_order(exchange,symbol):
 def cashout(bot, update, args):
 	
 	id=args[0]
-
+	bot_id=int(id)
 	revkey='REVERSE-'+str(id)
 	symbol=r.get(revkey).decode('utf-8')			
 	exchange=nickbot.get_exchange()
@@ -312,7 +314,9 @@ def cashout(bot, update, args):
 	
 	#Execute Sell Order
 	ret=exchange.create_order (symbol, 'limit', 'market', units)
-
+	order_id=int(ret['info']['orderId'])
+	log_order(bot_id,order_id,'SELL',symbol,rsi_symbol,trade_from,trade_to,sell_price,units)
+					
 	bot_name=symbol
 	r.srem("botlist", bot_name)
 	r.delete(bot_name)
@@ -338,7 +342,7 @@ def cashout(bot, update, args):
 
 def delete_bot(bot, update, args):
 	
-	bot_name=args[0]
+	bot_name=args[0].upper()
 	symbol=bot_name
 	print(bot_name)
 	
@@ -507,7 +511,9 @@ def add_bot(bot, update, args):
 
 			print("ALERT ALERT ALERT: BPPPP"+str(buy_price))
 			print(buy_price)
-			ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)			
+			ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)
+			order_id=int(ret['info']['orderId'])
+			log_order(bot_id,order_id,'BUY',symbol,rsi_symbol,trade_from,trade_to,buy_price,units)		
 		spawn_bot(symbol)
 		bot.send_message(chat_id=update.message.chat_id, text=ret)	
 
@@ -858,17 +864,253 @@ def alerts(bot,update,args):
 					message=message+"\n"+coin_stats
 					if seen==1:
 						bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
+
+def botstats(bot, update, args):
 	
+	config = configparser.ConfigParser()
+
+	config.read('/root/akeys/b.conf')
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	conn=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cur = conn.cursor()
+	
+	all=int(1)
+	dates=int(0)
+	
+	if args:
+		count=len(args)
+		print(str(count))
+		if count>1:
+			start_date=args[1].upper()
+
+
+			if start_date=='TODAY':
+				from datetime import datetime, timedelta
+
+				query="select * from at_analysis where date=current_date"
+				today=datetime.strftime(datetime.now(), '%Y-%m-%d')
+				start_date=today
+				end_date=today
+				print("SD: "+str(start_date))
+				print("ED: "+str(end_date))
+			elif start_date=='YESTERDAY':
+			
+				from datetime import datetime, timedelta
+				yesterday=datetime.strftime(datetime.now() - timedelta(1), '%Y-%m-%d')
+				query="select * from at_analysis where date='"+str(yesterday)+"'"
+				start_date=yesterday
+				end_date=yesterday
+			elif count==3:
+				start_date=args[1]
+				end_date=args[2]
+				query="select * from at_analysis where date>='"+str(start_date)+"'and date<='"+str(end_date)+"'"
+				dates=int(1)
+
+		if args[0]!='':
+			trade_to=str(args[0].upper())
+			all=int(0)
+			
+			if trade_to!='ALL':
+				query=query+" and trade_to='"+trade_to+"'"	
+	else:
+		query="select * from at_analysis"
+	
+	print(query)
+	cur.execute(query)
+	conn.commit()
+	result = cur.fetchall()
+	
+	for row in result:
+		id=row[0]
+		date=row[1]
+		start_date_time=row[2]
+		end_date_time=row[3]
+		start_timestamp=int(row[4])
+		end_timestamp=int(row[5])
+		duration_secs=int(row[6])
+		bot_id=int(row[7])
+		order_id=str(row[8])
+		symbol=str(row[9])	
+		rsi_symbol=str(row[10])
+		trade_from=str(row[11])
+		trade_to=str(row[12])
+		units=float(row[13])
+		buy_price=float(row[14])
+		sell_price=float(row[15])
+		profit=float(row[16])
+		profit_percent=float(row[17])
+		bot_profit_high=float(row[18])			
+		bot_profit_high_percent=float(row[19])			
+		invest_start=float(row[20])
+		invest_end=float(row[21])
+	
+		message=":::BOT " +str(symbol)
+		message=message+"\nSTART TIME: "+str(start_date_time)
+		message=message+"\nEND TIME: "+str(end_date_time)
+		message=message+"\nRAN FOR: "+str(duration_secs)+" SECS"	
+		message=message+str("\nBUY PRICE: ")+str(buy_price)+"\nSELL PRICE: "+str(sell_price)+"\nUNITS: "+str(units)
+		message=message+"\nVALUE START: "+str(invest_start)
+		message=message+"\nVALUE END: "+str(invest_end)
+		message=message+"\nP&L: "+str(profit)+' ('+str(profit_percent)+'%)'
+		message=message+"\nP&L HIGHS: "+str(bot_profit_high)+' ('+str(bot_profit_high_percent)+'%)'
+		message=message+"\nBOT ID: "+str(bot_id)
+		message=message+"\nORDER ID: "+str(order_id)
+		
+		print(message)
+		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
+		
+def botcsv(bot, update, args):
+	
+	config = configparser.ConfigParser()
+
+	config.read('/root/akeys/b.conf')
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	conn=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cur = conn.cursor()
+	
+	all=int(1)
+	dates=int(0)
+
+	if args:
+		
+		argstr=' '.join(args[0:])
+		parser = argparse.ArgumentParser()
+				
+		parser.add_argument('--start', help='Start Date')
+		parser.add_argument('--end', help='End Date')
+		parser.add_argument('--to', help='Trading To I.e BTC')
+		
+		
+		pargs = parser.parse_args(shlex.split(argstr))
+
+		
+		end_date=str(pargs.end)
+		trade_to=str(pargs.to)
+		
+		count=len(args)
+		print(str(count))
+		if count>1:
+			start_date=str(pargs.start.upper())
+			#start_date=args[1].upper()
+
+			if start_date=='TODAY':
+				from datetime import datetime, timedelta
+
+				query="select * from at_analysis where date=current_date"
+				today=datetime.strftime(datetime.now(), '%Y-%m-%d')
+				start_date=today
+				end_date=today
+				print("SD: "+str(start_date))
+				print("ED: "+str(end_date))
+			elif start_date=='YESTERDAY':
+			
+				from datetime import datetime, timedelta
+				yesterday=datetime.strftime(datetime.now() - timedelta(1), '%Y-%m-%d')
+				query="select * from at_analysis where date='"+str(yesterday)+"'"
+				start_date=yesterday
+				end_date=yesterday
+			elif count==3:
+				start_date=str(pargs.start.upper())
+				end_date=str(pargs.end.upper())
+				#start_date=args[1]
+				#end_date=args[2]
+				query="select * from at_analysis where date>='"+str(start_date)+"'and date<='"+str(end_date)+"'"
+				dates=int(1)
+
+		if args[0]!='':
+			#trade_to=str(args[0].upper())
+			trade_to=str(pargs.to.upper())
+			all=int(0)
+			
+			if trade_to!='ALL':
+				query=query+" and trade_to='"+trade_to+"'"	
+	else:
+		query="select * from at_analysis"
+	
+	print(query)
+	cur.execute(query)
+	conn.commit()
+	result = cur.fetchall()
+	
+	csv=str("Date\tStart DT\tEnd DT\tBot ID\tOrder ID\tTrading Pair\tTrade From\tTrade To\tUnits\tBuy Price\tSell Price\tProfit\tProfit Percent\tInvest Start\tInvest End\tDuration High Profit\tDuration High Percent\tDuration Secs")
+	for row in result:
+		id=row[0]
+		date=row[1]
+		start_date_time=row[2]
+		end_date_time=row[3]
+		start_timestamp=int(row[4])
+		end_timestamp=int(row[5])
+		duration_secs=int(row[6])
+		bot_id=int(row[7])
+		order_id=str(row[8])
+		symbol=str(row[9])	
+		rsi_symbol=str(row[10])
+		trade_from=str(row[11])
+		trade_to=str(row[12])
+		units=float(row[13])
+		buy_price=float(row[14])
+		sell_price=float(row[15])
+		profit=float(row[16])
+		profit_percent=float(row[17])
+		bot_profit_high=float(row[18])			
+		bot_profit_high_percent=float(row[19])			
+		invest_start=float(row[20])
+		invest_end=float(row[21])
+	
+		csv=csv+"\n"+str(date)+"\t"+str(start_date_time)+"\t"+str(end_date_time)+"\t"+str(bot_id)+"\t"+str(order_id)+"\t"+str(symbol)+"\t"+str(trade_from)+"\t"+str(trade_to)+"\t"+str(units)+"\t"+str(buy_price)+"\t"+str(sell_price)+"\t"+str(profit)+"\t"+str(profit_percent)+"\t"+str(invest_start)+"\t"+str(invest_end)+"\t"+str(bot_profit_high)+"\t"+str(bot_profit_high_percent)+"\t"+str(duration_secs)
+		message=":::BOT " +str(symbol)
+		message=message+"\nSTART TIME: "+str(start_date_time)
+		message=message+"\nEND TIME: "+str(end_date_time)
+		message=message+"\nRAN FOR: "+str(duration_secs)+" SECS"	
+		message=message+str("\nBUY PRICE: ")+str(buy_price)+"\nSELL PRICE: "+str(sell_price)+"\nUNITS: "+str(units)
+		message=message+"\nVALUE START: "+str(invest_start)
+		message=message+"\nVALUE END: "+str(invest_end)
+		message=message+"\nP&L: "+str(profit)+' ('+str(profit_percent)+'%)'
+		message=message+"\nP&L HIGHS: "+str(bot_profit_high)+' ('+str(bot_profit_high_percent)+'%)'
+		message=message+"\nBOT ID: "+str(bot_id)
+		message=message+"\nORDER ID: "+str(order_id)
+		
+		print(csv)
+	
+	csv=csv+"\n"
+	f= open("/home/crypto/cryptologic/csvs/stats.csv","w+")
+	f.write(csv)
+		
+	chat_id=update.message.chat_id
+	bot.send_document(chat_id=chat_id, document=open('/home/crypto/cryptologic/csvs/stats.csv', 'rb'))
+	#bot.send_document(chat_id=chat_id, document=open('tests/test.zip', 'rb'))
+
+
 def list_bots(bot, update, args):
 	
 	botlist=r.smembers("botlist")
 	exchange=nickbot.get_exchange()
 	
+	if not botlist:
+		message="Currently there are no bots running"
+		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
+		return(1)
+	
 	for bot_name in botlist:
 		bot_name=bot_name.decode('utf-8')
 		symbol=bot_name
+		buy_array=""
+		buy_price=int(0)
+		market_price=int(0)
+		units=int(0)
+		investment_start=int(0)
+		investment_now=int(0)
 		print(symbol)
 		
+		new_stoploss=0
 		ts=float(r.get(bot_name))
 		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 		redis_key="bconfig-"+symbol		
@@ -877,6 +1119,14 @@ def list_bots(bot, update, args):
 		
 		trade_from=r.hget(redis_key,'trade_from').decode('utf-8')
 		trade_to=r.hget(redis_key,'trade_to').decode('utf-8')
+		book_pos=int(0)
+		wall_stoploss=int(0)
+		if r.hget(redis_key,"book_pos"):
+			book_pos=r.hget(redis_key,"book_pos").decode('utf-8')
+		
+		if r.hget(redis_key,"wall_stoploss"):
+			wall_stoploss=r.hget(redis_key,"wall_stoploss").decode('utf-8')
+
 		bot_id=r.hget(redis_key,'id').decode('utf-8')
 		
 		ts=float(r.get(bot_name).decode('utf-8'))				
@@ -938,10 +1188,21 @@ def list_bots(bot, update, args):
 		if r.hget(ckey,"checkpoints"):
 			checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
 			checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
-			message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
+		
+		if r.hget(ckey,"checkpoint-trigger"):
+			checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_trigger').decode('utf-8'))			
+			message=message+"\nTRIGGER CHECKPOINT STOPLOSS @: "+str(checkpoint_stoploss_trigger)
+			message=message+"\nLAST CHECKPOINT STOPLOSS: "+str(checkpoint_stoploss)
 			message=message+"\nCHECKPOINTS: "+str(checkpoints)
-			
-		print("Debut MOFO;"+str(profit_total))
+			message=message+"\nBOOK POSITION: "+str(book_pos)
+			message=message+"\nWALL STOPLOSS: "+str(wall_stoploss)
+			buy_ratio=str(r.get('SENT-BUYS').decode('utf-8'))
+			sell_ratio=str(r.get('SENT-SELLS').decode('utf-8'))
+			price_up_ratio=str(r.get('SENT-PRICE-UP-RATIO').decode('utf-8'))
+			message=message+"\nSENTIMENT RATIO OF BUYS: "+str(buy_ratio)
+			message=message+"\nSENTIMENT RATIO OF SELLS: "+str(sell_ratio)
+			message=message+"\nSENTIMENT PRICE UP RATIO: "+str(price_up_ratio)
+		
 		#sys.exit("die")
 		dec=market_price/100*float(original_stoploss_percent)
 		new_stoploss=market_price-dec	
@@ -953,6 +1214,7 @@ def list_bots(bot, update, args):
 			last_stoploss=mc.get(key)		
 			print("SLP LAST STOPLOSS: "+str(last_stoploss))
 			print("SLP NEW STOPLOSS: "+str(new_stoploss))
+			
 		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
 		
 def stoploss(bot, update,args):	
@@ -1080,6 +1342,8 @@ alerts_handler=CommandHandler('alerts', alerts,pass_args=True)
 cashout_handler = CommandHandler('cashout', cashout,pass_args=True)
 walls_handler = CommandHandler('walls', walls,pass_args=True)
 book_intel_handler = CommandHandler('bookintel', bookintel,pass_args=True)
+bot_stats_handler = CommandHandler('botstats', botstats,pass_args=True)
+bot_csv_handler = CommandHandler('botcsv', botcsv,pass_args=True)
 
 dispatcher.add_handler(delete_bot_handler)
 dispatcher.add_handler(add_bot_handler)
@@ -1096,5 +1360,6 @@ dispatcher.add_handler(alerts_handler)
 dispatcher.add_handler(cashout_handler)
 dispatcher.add_handler(walls_handler)
 dispatcher.add_handler(book_intel_handler)
-
+dispatcher.add_handler(bot_stats_handler)
+dispatcher.add_handler(bot_csv_handler)
 updater.start_polling()

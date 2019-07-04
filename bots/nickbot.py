@@ -37,6 +37,82 @@ r = redis.Redis(host='localhost', port=6379, db=0)
 
 mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
+def log_alert(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts,percent_15m,percent_1h,percent_3h,percent_6h,percent_12h,link):
+	
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = str("""
+		INSERT INTO at_alerts(date,date_time,timestamp,symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts,percent_15m,percent_1h,percent_3h,percent_6h,percent_12h,link) 
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	""")
+
+	cursor.execute(sql,(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts,percent_15m,percent_1h,percent_3h,percent_6h,percent_12h,link))
+	db.close()
+
+def log_binance(symbol,price,percent,spread,low,high,volume,btc_price,btc_percent):
+	
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = str("""
+		INSERT INTO binance_stats(date,date_time,timestamp,symbol,price,percent,spread,low,high,volume,btc_price,btc_percent) 
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	""")
+
+	cursor.execute(sql,(symbol,price,percent,spread,low,high,volume,btc_price,btc_percent))
+	db.close()
+
+def log_order(exchange,bot_id,order_id,order_type,symbol,rsi_symbol,trade_from,trade_to,sell_price,units):
+	
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	order_array=fetch_last_buy_order(exchange,symbol)
+	buy_price=float(order_array['price'])
+	
+	profit_per_unit=sell_price-buy_price
+	profit=float(profit_per_unit*units)
+	profit=round(profit,8)
+	prices = [buy_price,sell_price]
+	for a, b in zip(prices[::1], prices[1::1]):
+		profit_percent=100 * (b - a) / a
+		profit_percent=round(profit_percent,2)
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = str("""
+		INSERT INTO at_orders(date,date_time,timestamp,bot_id,order_id,symbol,rsi_symbol,trade_from,trade_to,units,buy_price,sell_price,profit,profit_percent) 
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	""")
+
+	print(bot_id,order_id,symbol,rsi_symbol,trade_from,trade_to,units,buy_price,sell_price,profit,profit_percent)
+
+	cursor.execute(sql,(bot_id,order_id,symbol,rsi_symbol,trade_from,trade_to,units,buy_price,sell_price,profit,profit_percent))
+	db.close()
+	
 def get_exchange():
 	
 	#Read in our apikeys and accounts
@@ -176,25 +252,34 @@ def wall_pos(symbol,stoploss,usd_limit):
 	exchange=get_exchange()
 	message=""
 	buy_book=exchange.fetch_order_book(symbol,100)
-	#print(buy_book)
+	print(buy_book)
 	pos=int(0)
 	book=buy_book['bids']
-
-	book.reverse()
+	print(book)
+	#book.reverse()
 	tv_usd=0
+	got=0
+	print("USD LIMIT: "+str(usd_limit))
 	for line in book:
 		k=line[0]
 		v=line[1]
 		v_usd=round(float(v)*pusd,2)
 		tv_usd=round(float(tv_usd+v_usd),2)
-		if k>=float(stoploss):
-			message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
-			if tv_usd>=usd_limit:
-				print(message)
-				pos=pos-1
-				return(pos)		
-		pos+=1
-	return(pos)	
+		print("DEBUG K: "+str(k))
+		print("DEBUG LSL: "+str(stoploss))
+		print("DEBUG TVUSD: "+str(tv_usd))
+		print("DEBUG USDLIMIT: "+str(usd_limit))
+		#if k>=float(stoploss):
+		message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
+		if tv_usd>=usd_limit:
+			print(message)
+			return(pos)
+			got=1	
+		
+		if got!=1:
+			pos+=1
+			
+	return(pos)		
 	print(message)
 	
 def work_units(symbol,budget):
@@ -413,6 +498,13 @@ def auto_spawn(trading_on,rsi_symbol, symbol, units, trade_from, trade_to, buy_p
 		buy_pos=int(buy_pos)
 		buy_price=float(buy_book[buy_pos][0])
 		print(symbol+" Units Buy Price"+str(buy_price))
+		
+		redis_order_log="ORDERLOG-"+symbol
+
 		ret=exchange.create_order (symbol, 'limit', 'buy', units, buy_price)
+		
+		order_id=int(ret['info']['orderId'])
+
+		m=str(bid)+"\t"+str(order_id)+"\tBUY\t"+str(symbol)+"\t"+str(rsi_symbol)+"\t"+str(trade_from)+"\t"+str(trade_to)+"\t"+str(buy_price)+"\t"+str(units)
 		print(ret)			
 	spawn_bot(symbol)

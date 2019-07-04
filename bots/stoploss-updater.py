@@ -35,25 +35,29 @@ import ccxt  # noqa: E402
 def wall_magic(symbol,last_stoploss):
 	
 	exchange=nickbot.get_exchange()
-	book=nickbot.fetch_order_book(exchange,symbol,'bids','500')
+	book=nickbot.fetch_order_book(exchange,symbol,'bids','100')
 
 	#New JEdimaster shit lets have at least $100k above us in buy order book set our dynamic stoploss @ that position in the book
 	
 	vol24=float(nickbot.volume24h_in_usd(symbol))
 	if vol24>10000000:
-		vlimit=vol24/100*1.25
+		vlimit=vol24/100*0.75
 	else:
-		vlimit=vol24/100*2
-	
+		vlimit=vol24/100*0.75
+			
 	print(symbol)
-	print("DDDDDDDDDD V24: "+str(vol24))
+	print("VOLUME V24: "+str(vol24))
 	print("VLIMIT: "+str(vlimit))
 		
 	sl_pos=nickbot.wall_pos(symbol,last_stoploss,vlimit)
 	if sl_pos==100:
 		sl_pos=99
-	print("LSL: "+str(last_stoploss))
-	print("SLP: "+str(sl_pos))
+	print("LAST STOPLOSS: "+str(last_stoploss))
+	print("STOPLOSS POSITION: "+str(sl_pos))
+	
+	redis_key="bconfig-"+symbol
+	r.hset(redis_key, 'book_pos',sl_pos)
+
 	wall_stoploss=float(book[sl_pos][0])
 	if not wall_stoploss:
 		sl_pos=nickbot.wall_pos(symbol,last_stoploss,50000)		
@@ -61,6 +65,9 @@ def wall_magic(symbol,last_stoploss):
 			sl_pos=99
 		wall_stoploss=float(book[sl_pos][0])
 	print("WSL: "+str(wall_stoploss))
+	
+	r.hset(redis_key, 'wall_stoploss',wall_stoploss)
+	
 	return(wall_stoploss)
 
 exchange=nickbot.get_exchange()
@@ -69,7 +76,15 @@ def loop_bots():
 	
 	exchange=nickbot.get_exchange()
 	botlist=r.smembers("botlist")
+	
 	for bot_name in botlist:
+	
+		buy_array=float(0.0)
+		new_stoploss=float(0.0)
+		last_stoploss=float(0.0)
+		market_price=float(0.0)
+
+		print(str(bot_name))
 		bot_name=bot_name.decode('utf-8')
 		symbol=bot_name.upper()
 		ts=float(r.get(bot_name))
@@ -90,19 +105,29 @@ def loop_bots():
 		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")				
 		
 		key=str(symbol)+'-TRADES'	
+		
 		key=str(symbol)+'-LAST-PRICE'
 		if r.get(key):
 			market_price=float(r.get(key))
-
-
+			print("SLDB MP: "+str(market_price))
+		
 		t_key="TTT-"+str(symbol)
+		
 		if mc.get(t_key):
 			buy_array=mc.get(t_key)
 		else:
 			#Cache last order in ram for 60 seconds to speed up api calls
 			buy_array=nickbot.fetch_last_buy_order(exchange,symbol)
-
-		print("SLDB: "+str(symbol))
+		#if r.get(t_key):
+		#	buy_array=r.get(t_key)
+		#else:
+		#Cache last order in ram for 60 seconds to speed up api calls
+		#buy_array=nickbot.fetch_last_buy_order(exchange,symbol)
+		#r.set(t_key,buy_array)
+		
+		print("BA: ")
+		print(buy_array)
+		print(str(symbol)+":::START!!!!!!!!!!!!\n\n")
 		
 		if buy_array!='NULL':
 			units=float(buy_array['executedQty'])
@@ -110,12 +135,13 @@ def loop_bots():
 			if buy_array['type']=='MARKET':
 				print(buy_array)	
 				buy_price=float(buy_array['cummulativeQuoteQty'])/units
-				print("DB1: "+str(buy_price))
+				print("BUY PRICE: "+str(buy_price))
 			else:
 				buy_price=float(buy_array['price'])
-				print("DB2: "+str(buy_price))
+				print("BUY PRICE: "+str(buy_price))
 
-			profit_per_unit=market_price-buy_price
+			print("MARKET PRICE: "+str(market_price))
+			profit_per_unit=float(market_price)-float(buy_price)
 			profit_total=float(profit_per_unit*units)
 			profit_total=round(profit_total,8)
 			prices = [buy_price,market_price]
@@ -156,7 +182,7 @@ def loop_bots():
 			
 			#if profit_total>0:
 			
-			print("Debut MOFO;"+str(profit_total))
+			print("PROFIT TOTAL;"+str(profit_total))
 			#sys.exit("die")
 			dec=market_price/100*float(original_stoploss_percent)
 			new_stoploss=market_price-dec	
@@ -166,11 +192,8 @@ def loop_bots():
 			
 			if mc.get(key):
 				last_stoploss=mc.get(key)		
-				print("SLP LAST STOPLOSS: "+str(last_stoploss))
-				print("SLP NEW STOPLOSS: "+str(new_stoploss))
-
-			print("bf new code;")
-			new_stoploss=float(wall_magic(symbol,last_stoploss))
+			
+			#new_stoploss=float(wall_magic(symbol,last_stoploss))
 			print("NEW SL ADD: "+str(new_stoploss))
 			print(new_stoploss)
 							
@@ -198,6 +221,9 @@ def loop_bots():
 				if r.hget(ckey,"checkpoints"):
 		
 					checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
+					checkpoint_stoploss_trigger_add=float(check_point_stoploss)/100*0.5
+					checkpoint_stoploss_trigger=flot(checkpoint_stoploss)+float(checkpoint_stoploss_trigger_add)
+					r.hset(ckey, 'checkpoint_trigger',checkpoint_stoploss_trigger)
 					checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
 					message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
 					message=message+"\nCHECKPOINTS: "+str(checkpoints)
@@ -217,7 +243,7 @@ def loop_bots():
 			elif last_stoploss==0:
 				print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
 				key=str(symbol)+'-SYSTEM-STOPLOSS'
-				mc.set(key,original_stoploss_price,86400)	
+				mc.set(key,original_stoploss_price,864000)	
 
 				ckey=str(bot_id)+'-CPS'
 				if r.hget(ckey,"checkpoints"):
@@ -238,13 +264,13 @@ def loop_bots():
 					r.set(bkey,message_tg)		
 
 					print(message_tg)
-
+			print(str(symbol)+":::END !!!!!!!!!!!!!\n\n")
 while True:
-	try:
-		loop_bots()
-		print("STOPLOSS UPDATER")
-	except:
-		print("")
+	#try:
+	loop_bots()
+	print("STOPLOSS UPDATER")
+	#except:
+	#	print("")
 	time.sleep(5)		
 
 
