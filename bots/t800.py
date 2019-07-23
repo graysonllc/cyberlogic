@@ -239,7 +239,7 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 		asks=ret['asks']
 		return asks
 
-def sell(bot, update,args):	
+def sell2(bot, update,args):	
 	bid=update.message.from_user.id
 
 	symbol=args[0].upper()
@@ -292,6 +292,77 @@ def fetch_last_order(exchange,symbol):
 		data=0
 		return data
 
+
+def untether(bot, update, args):
+	exchange=nickbot.get_exchange()
+	symbol=str(args[0]).upper()
+	if args[1]:
+		stablecoin=str(args[1]).upper()
+	else:
+		stablecoin='USDT'
+	balances=exchange.fetch_balance ()
+	balance=float(format(balances[symbol]['total'],'.8f'))
+	print(str(balance))
+	
+	pair=str(symbol)+"/"+str(stablecoin)	
+					
+	last_array=nickbot.fetch_last_order(exchange,pair)
+	last_price=float(last_array['price'])
+	last_type=last_array['type']
+	last_units=last_array['executedQty']
+
+	units=float(last_units)
+	book=nickbot.fetch_order_book(exchange,pair,'bids',100)
+	buy_price=float(book[0][0])
+	total_amount=round(buy_price*units,2)
+	message="UNTETHERING/BUYING BACK: "+str(symbol)+" UNITS: "+str(units)+" PRICE: "+str(buy_price)+" TO STABLE COIN: "+str(stablecoin)+" TOTAL USD: "+str(total_amount)
+	print(message)
+	bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
+	exchange=nickbot.get_exchange()
+	ret=exchange.create_order (pair, 'limit', 'buy', units, buy_price)
+
+def panic(bot, update, args):
+	exchange=nickbot.get_exchange()
+		
+	symbol='BTC'
+	stablecoin='USDT'
+	balance=float(format(balances[symbol]['total'],'.8f'))
+	pair=str(symbol)+"/"+str(stablecoin)	
+					
+	book=nickbot.fetch_order_book(exchange,pair,'bids',100)
+	sell_price=float(book[0][0])
+	
+	message="UNTETHERING/BUYING BACK: "+str(symbol)+" UNITS: "+str(units)+" PRICE: "+str(buy_price)+" TO STABLE COIN: "+str(stablecoin)+" TOTAL USD: "+str(total_amount)
+	print(message)
+	bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
+	exchange=nickbot.get_exchange()
+	ret=exchange.create_order (pair, 'limit', 'buy', units, buy_price)
+
+def tether(bot, update, args):
+	exchange=nickbot.get_exchange()
+	symbol=str(args[0]).upper()
+	if args[1]:
+		stablecoin=str(args[1]).upper()
+	else:
+		stablecoin=str('USDT')
+	percent=str(args[2])
+		
+	balances=exchange.fetch_balance ()
+	balance=float(format(balances[symbol]['total'],'.8f'))
+	print(str(balance))
+	units=units=balance/100*float(percent)
+	units=round(units,2)
+	pair=str(symbol)+"/"+str(stablecoin)
+	print("FDEBYG:")
+	book=nickbot.fetch_order_book(exchange,pair,'bids',100)
+	sell_price=float(book[0][0])
+	total_amount=round(sell_price*units,2)
+	message="TETHERING: "+str(symbol)+" UNITS: "+str(units)+" PRICE: "+str(sell_price)+" TO STABLE COIN: "+str(stablecoin)+" TOTAL USD: "+str(total_amount)
+	print(message)
+	bot.send_message(chat_id=update.message.chat_id, text=message, parse_mode= 'HTML')
+	exchange=nickbot.get_exchange()
+	ret=exchange.create_order (pair, 'limit', 'sell', units, sell_price)
+				
 def cashout(bot, update, args):
 	
 	id=args[0]
@@ -1093,7 +1164,7 @@ def list_bots(bot, update, args):
 	
 	botlist=r.smembers("botlist")
 	exchange=nickbot.get_exchange()
-	
+	percent=int(0)
 	if not botlist:
 		message="Currently there are no bots running"
 		bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')	
@@ -1110,6 +1181,12 @@ def list_bots(bot, update, args):
 		investment_now=int(0)
 		print(symbol)
 		
+		orders = exchange.fetch_open_orders(symbol,1)
+		open_order=len(orders)
+		if open_order:
+			message="Theres an open order for: "+str(symbol)
+			bot.send_message(chat_id=update.message.chat_id, text=message,parse_mode= 'HTML')
+			continue
 		new_stoploss=0
 		ts=float(r.get(bot_name))
 		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
@@ -1144,6 +1221,7 @@ def list_bots(bot, update, args):
 		
 		print(buy_array)
 		
+		profit_total=int(0)
 		if buy_array!='NULL':
 			units=float(buy_array['executedQty'])
 			
@@ -1169,45 +1247,29 @@ def list_bots(bot, update, args):
 			investment_now=float(investment_now)
 			investment_now=round(investment_now,8)
 	
-		#Stoploss Stuff
-		original_stoploss_percent=r.hget(redis_key,'stoploss_percent').decode('utf-8')
-		original_stoploss_price_ded=buy_price/100*float(original_stoploss_percent)
-		original_stoploss_price=float(buy_price-original_stoploss_price_ded)
-		original_stoploss_price=round(original_stoploss_price,8)
-		
-		message=":::BOT " +str(symbol)+"\nSTARTED: "+str(running)+str("\nBUY PRICE: ")+str(buy_price)+"\nPRICE NOW: "+str(market_price)+"\nUNITS: "+str(units)
-		message=message+"\nVALUE START "+'('+str(trade_to)+'): '+str(investment_start)
-		message=message+"\nVALUE NOW "+'('+str(trade_to)+'): '+str(investment_now)
-		message=message+"\nP&L: "+str(profit_total)+' ('+str(percent)+'%)'
-		message=message+"\nBOT ID: "+str(bot_id)
-		message=message+"\nORIGINAL STOPLOSS PRICE: "+str(original_stoploss_price)
-		message=message+"\nORIGINAL STOPLOSS PERCENT: "+str(original_stoploss_percent)
+		message="<b>:::BOT " +str(symbol)+"\nSTARTED: </b>"+str(running)+str("\n<b>BUY PRICE:</b> ")+str(buy_price)+"\n<b>PRICE NOW:</b> "+str(market_price)+"\n<b>UNITS:</b> "+str(units)
+		vol24=float(nickbot.volume24h_in_usd(symbol))
+		message=message+"\n<b>VOLUME 24HRS:</b> "+str(vol24)
+		message=message+"\n<b>VALUE START:</b> "+'('+str(trade_to)+'): '+str(investment_start)
+		message=message+"\n<b>VALUE NOW:</b> "+'('+str(trade_to)+'): '+str(investment_now)
+		message=message+"\n<b>P&L:</b> "+str(profit_total)+' ('+str(percent)+'%)'
+		message=message+"\n<b>BOT ID:</b> "+str(bot_id)
 	
 		ckey=str(bot_id)+'-CPS'
 		
 		if r.hget(ckey,"checkpoints"):
 			checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
 			checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
-		
-		if r.hget(ckey,"checkpoint-trigger"):
-			checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_trigger').decode('utf-8'))			
-			message=message+"\nTRIGGER CHECKPOINT STOPLOSS @: "+str(checkpoint_stoploss_trigger)
-			message=message+"\nLAST CHECKPOINT STOPLOSS: "+str(checkpoint_stoploss)
-			message=message+"\nCHECKPOINTS: "+str(checkpoints)
-			message=message+"\nBOOK POSITION: "+str(book_pos)
-			message=message+"\nWALL STOPLOSS: "+str(wall_stoploss)
+			message=message+"\n<b>LAST CHECKPOINT STOPLOSS:</b> "+str(checkpoint_stoploss)
+			message=message+"\n<b>CHECKPOINTS:</b> "+str(checkpoints)
+			message=message+"\n<b>BOOK POSITION:</b> "+str(book_pos)
 			buy_ratio=str(r.get('SENT-BUYS').decode('utf-8'))
 			sell_ratio=str(r.get('SENT-SELLS').decode('utf-8'))
 			price_up_ratio=str(r.get('SENT-PRICE-UP-RATIO').decode('utf-8'))
-			message=message+"\nSENTIMENT RATIO OF BUYS: "+str(buy_ratio)
-			message=message+"\nSENTIMENT RATIO OF SELLS: "+str(sell_ratio)
-			message=message+"\nSENTIMENT PRICE UP RATIO: "+str(price_up_ratio)
+			message=message+"\n<b>SENTIMENT RATIO OF BUYS:</b> "+str(buy_ratio)
+			message=message+"\n<b>SENTIMENT RATIO OF SELLS:</b> "+str(sell_ratio)
+			message=message+"\n<b>SENTIMENT PRICE UP RATIO:</b> "+str(price_up_ratio)
 		
-		#sys.exit("die")
-		dec=market_price/100*float(original_stoploss_percent)
-		new_stoploss=market_price-dec	
-		new_stoploss=round(new_stoploss,8)
-
 		key=str(symbol)+'-SYSTEM-STOPLOSS'
 			
 		if mc.get(key):
@@ -1332,7 +1394,8 @@ help_handler = CommandHandler('help', help)
 ticker_handler = CommandHandler('ticker', ticker,pass_args=True)
 p_handler = CommandHandler('p', ticker,pass_args=True)
 market_handler = CommandHandler('market', market)
-sell_handler=CommandHandler('sell', sell,pass_args=True)
+tether_handler=CommandHandler('tether', tether,pass_args=True)
+untether_handler=CommandHandler('untether', untether,pass_args=True)
 price_handler=CommandHandler('price', price,pass_args=True)
 stoploss_handler=CommandHandler('stoploss', stoploss,pass_args=True)
 list_bots_handler=CommandHandler('listbots', list_bots,pass_args=True)
@@ -1353,7 +1416,9 @@ dispatcher.add_handler(list_bots_handler)
 dispatcher.add_handler(ticker_handler)
 dispatcher.add_handler(market_handler)
 dispatcher.add_handler(help_handler)
-dispatcher.add_handler(sell_handler)
+dispatcher.add_handler(tether_handler)
+dispatcher.add_handler(untether_handler)
+dispatcher.add_handler(untether_handler)
 dispatcher.add_handler(price_handler)
 dispatcher.add_handler(p_handler)
 dispatcher.add_handler(alerts_handler)

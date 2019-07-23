@@ -37,6 +37,35 @@ r = redis.Redis(host='localhost', port=6379, db=0)
 
 mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 
+redis_server = redis.Redis(host='localhost', port=6379, db=0)
+
+def broadcast_tether_trade(chatid,text):
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+	telegram_id=config['binance']['AUTO_TETHERBOT_TELEGRAM_ID']
+	token = telegram_id
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
+	r=requests.get(url)
+	html = r.content	
+
+def broadcast_tether(chatid,text):
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+	telegram_id=config['binance']['TETHERBOT_TELEGRAM_ID']
+	token = telegram_id
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
+	r=requests.get(url)
+	html = r.content	
+
+def broadcast_moon(chatid,text):
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+	telegram_id=config['binance']['MOON_TELEGRAM_ID']
+	token = telegram_id
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
+	r=requests.get(url)
+	html = r.content	
+
 def log_alert(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts,percent_15m,percent_1h,percent_3h,percent_6h,percent_12h,link):
 	
 	config = configparser.ConfigParser()
@@ -58,6 +87,49 @@ def log_alert(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,s
 	cursor.execute(sql,(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts,percent_15m,percent_1h,percent_3h,percent_6h,percent_12h,link))
 	db.close()
 
+def log_autotether_trades(symbol,price,units,percent,action,reason):
+	
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = str("""
+		INSERT INTO autotether_trades(date,date_time,timestamp,symbol,price,units,percent,action,reason) 
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s)
+	""")
+
+	cursor.execute(sql,(symbol,price,units,percent,action,reason))
+	db.close()
+
+def log_autotether_stats(symbol,price,percent_1min,percent_2min,percent_3min,percent_5min,percent_10min,percent_15min,percent_30min,percent_1hour,percent_3hour,percent_6hour,percent_12hour,percent_24hour,rsi):
+	
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = str("""
+		INSERT INTO autotether_stats(date,date_time,timestamp,symbol,price,percent_1min,percent_2min,percent_3min,percent_5min,percent_10min,percent_15min,percent_30min,percent_1hour,percent_3hour,percent_6hour,percent_12hour,percent_24hour,rsi) 
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	""")
+
+	cursor.execute(sql,(symbol,price,percent_1min,percent_2min,percent_3min,percent_5min,percent_10min,percent_15min,percent_30min,percent_1hour,percent_3hour,percent_6hour,percent_12hour,percent_24hour,rsi))
+	db.close()
+	
+	
 def log_binance(symbol,price,percent,spread,low,high,volume,btc_price,btc_percent):
 	
 	config = configparser.ConfigParser()
@@ -141,6 +213,18 @@ def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
     return head + replace_with + tail
 
+def diff_percent(low,high
+	):
+	low=float(low)
+	high=float(high)
+	prices = [low,high]
+	for a, b in zip(prices[::1], prices[1::1]):
+		pdiff=100 * (b - a) / a
+	pdiff=round(pdiff,4)
+
+	return(pdiff)
+
+
 def get_price(exchange,symbol):
 	
 	symbol=symbol.upper()	
@@ -148,7 +232,382 @@ def get_price(exchange,symbol):
 	print(str(ticker))
 	price=float(ticker['last'])
 	return(price)
+
+def price_when(symbol,secs):
+
+	symbol=symbol.replace('/','')
+	ksymbol=symbol
+	ts_now = datetime.datetime.now()
+	ts_now_ts=int(time.mktime(ts_now.timetuple()))	
+	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
+
+	ts_before = ts_now - datetime.timedelta(seconds=secs)
+	ts_end = ts_before + datetime.timedelta(seconds=20)
+	print(ts_before)
+
+	ts_before_ts=int(time.mktime(ts_before.timetuple()))
+	ts_end_ts=int(time.mktime(ts_end.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_before_ts).strftime("%Y-%m-%d %H:%M:%S")
+	#print("C")
+	#print(tsd)	
+	redis_key=str(symbol)+'-HISTORY'
+	#print(redis_key)
+	#print(ts_before_ts)
+	#print(ts_end_ts)
 	
+	#redis_server.zrangebyscore(redis_key,symbol,ts_before_ts,ts_end_ts)
+	ret=redis_server.zrangebyscore(redis_key,ts_before_ts,ts_end_ts,0,1000)
+	size=len(ret)
+	if size>0:
+		data=ret[0].decode('utf-8')
+		ts,price,volume = data.split(":")
+
+		data={}
+		price=round(float(price),2)
+		volume=round(float(volume),2)
+				
+		data['price']=float(price)
+		data['volume']=float(volume)
+		return(data)
+	else:	
+		return("ERROR")
+
+def get_rsi(pair,interval):
+	rsi_symbol=pair
+	rsi_symbol=rsi_symbol.replace('/','')
+	
+	arr = []
+	out = []
+	fin = []
+	url="https://api.binance.com/api/v1/klines?symbol="+rsi_symbol+"&interval="+interval+"&limit=500"
+	#print(url)
+	r=requests.get(url)
+	res = (r.content.strip())
+	status = r.status_code
+	#print("Status: "+str(status))
+	rsi_status=''
+	trades = json.loads(res.decode('utf-8'))
+
+	lp=0
+	for trade in trades:
+		open_price=float(trade[0])
+		close_price=float(trade[4])
+		high_price=float(trade[2])
+		low_price=float(trade[3])
+		if close_price>0 and close_price!=lp:
+			arr.append(close_price)	
+		lp=close_price
+
+	np_arr = np.array(arr,dtype=float)
+	output=talib.RSI(np_arr,timeperiod=15)
+
+	for chkput in output:
+		if chkput>0:
+			fin.append(chkput)
+		
+	rsi=float(fin[-1])
+	rsi=round(rsi)
+	return(rsi)
+
+def store_prices(symbol,price,volume):
+	#1Minute
+	data=price_when(symbol,60)
+	if data!='ERROR':
+		price_1min=data['price']
+		volume_1min=data['volume']
+		good=int(1)
+		price_percent_1min=diff_percent(price_1min,price)
+		volume_percent_1min=diff_percent(volume_1min,volume)
+	else:
+		price_percent_1min=0
+		volume_percent_1min=0
+		price_1min=0
+		volume_1min=0
+
+
+
+	#2Minute
+	data=price_when(symbol,120)
+	if data!='ERROR':
+		price_2min=data['price']
+		volume_2min=data['volume']
+		good=int(1)
+		price_percent_2min=diff_percent(price_2min,price)
+		volume_percent_2min=diff_percent(volume_2min,volume)
+	else:
+		price_percent_2min=0
+		volume_percent_2min=0	
+		price_2min=0
+		volume_2min=0
+
+
+	#3Minute
+	data=price_when(symbol,180)
+	if data!='ERROR':
+		price_3min=data['price']
+		volume_3min=data['volume']
+		good=int(1)
+		price_percent_3min=diff_percent(price_3min,price)
+		volume_percent_3min=diff_percent(volume_3min,volume)
+	else:
+		price_percent_3min=0
+		volume_percent_3min=0
+		price_3min=0
+		volume_3min=0
+
+	
+	#5Minute
+	data=price_when(symbol,300)
+	if data!='ERROR':
+		price_5min=data['price']
+		volume_5min=data['volume']
+		good=int(1)
+		price_percent_5min=diff_percent(price_5min,price)
+		volume_percent_5min=diff_percent(volume_5min,volume)
+	else:
+		price_percent_5min=0
+		volume_percent_5min=0
+		price_5min=0
+		volume_5min=0
+
+	#10Minute
+	data=price_when(symbol,600)
+	if data!='ERROR':
+		price_10min=data['price']
+		volume_10min=data['volume']
+		good=int(1)
+		price_percent_10min=diff_percent(price_10min,price)
+		volume_percent_10min=diff_percent(volume_10min,volume)
+	else:
+		price_percent_10min=0
+		volume_percent_10min=0
+		price_10min=0
+		volume_10min=0
+
+	#15Minute
+	data=price_when(symbol,900)
+	if data!='ERROR':
+		price_15min=data['price']
+		volume_15min=data['volume']
+		good=int(1)
+		price_percent_15min=diff_percent(price_15min,price)
+		volume_percent_15min=diff_percent(volume_15min,volume)
+	else:
+		price_percent_15min=0
+		volume_percent_15min=0
+		price_15min=0
+		volume_15min=0
+
+	
+	#30Minute
+	data=price_when(symbol,1800)
+	if data!='ERROR':
+		price_30min=data['price']
+		volume_30min=data['volume']
+		good=int(1)
+		price_percent_30min=diff_percent(price_30min,price)
+		volume_percent_30min=diff_percent(volume_30min,volume)
+	else:
+		price_percent_30min=0
+		volume_percent_30min=0
+		price_30min=0
+		volume_30min=0
+
+	#1Hour
+	price_1hour=int(0)
+	volume_1hour=int(0)
+	
+	price_2hour=int(0)
+	volume_2hour=int(0)
+
+	price_3hour=int(0)
+	volume_3hour=int(0)
+		
+	price_6hour=int(0)
+	volume_6hour=int(0)
+	
+	price_12hour=int(0)
+	volume_12hour=int(0)
+
+	price_24hour=int(0)
+	volume_24hour=int(0)
+	
+	data=price_when(symbol,3600)
+	if data!='ERROR':
+		price_1hour=data['price']
+		volume_1hour=data['volume']
+		good=int(1)
+		price_percent_1hour=diff_percent(price_1hour,price)
+		volume_percent_1hour=diff_percent(volume_1hour,volume)
+	else:
+		price_percent_1hour=0
+		volume_percent_1hour=0
+		price_1hour=0
+		
+	#1Hour
+	data=price_when(symbol,7200)
+	if data!='ERROR':
+		price_2hour=data['price']
+		volume_2hour=data['volume']
+		good=int(1)
+		price_percent_2hour=diff_percent(price_2hour,price)
+		volume_percent_2hour=diff_percent(volume_2hour,volume)
+	else:
+		price_percent_2hour=0
+		volume_percent_2hour=0
+		price_2hour=0
+		volume_2hour=0
+	
+	#3Hour
+	data=price_when(symbol,10800)
+	if data!='ERROR':
+		price_3hour=data['price']
+		volume_3hour=data['volume']
+		good=int(1)
+		price_percent_3hour=diff_percent(price_3hour,price)
+		volume_percent_3hour=diff_percent(volume_3hour,volume)
+	else:
+		price_percent_3hour=0
+		volume_percent_3hour=0
+		price_3hour=0
+		volume_3hour=0
+		
+	#6Hour
+	data=price_when(symbol,21600)
+	if data!='ERROR':
+		price_6hour=data['price']
+		volume_6hour=data['volume']
+		good=int(1)
+		price_percent_6hour=diff_percent(price_6hour,price)
+		volume_percent_6hour=diff_percent(volume_6hour,volume)
+	else:
+		price_percent_6hour=0
+		volume_percent_6hour=0
+		price_6hour=0
+		volume_6hour=0
+	
+	#12Hour
+	data=price_when(symbol,43200)
+	if data!='ERROR':
+		price_12hour=data['price']
+		volume_12hour=data['volume']
+		good=int(1)
+		price_percent_12hour=diff_percent(price_12hour,price)
+		volume_percent_12hour=diff_percent(volume_12hour,volume)
+	else:
+		price_percent_12hour=0
+		volume_percent_12hour=0
+		price_12hour=0
+		volume_12hour=0
+	
+	#24hour
+	data=price_when(symbol,86400)
+	if data!='ERROR':
+		price_24hour=data['price']
+		volume_24hour=data['volume']
+		good=int(1)
+		price_percent_24hour=diff_percent(price_24hour,price)
+		volume_percent_24hour=diff_percent(volume_24hour,volume)
+	else:
+		price_percent_24hour=0
+		volume_percent_24hour=0
+		price_24hour=0
+		volume_24hour=0
+	
+	prices = {
+		"price-1min":str(price_1min),
+		"price-percent-1min":str(price_percent_1min), 
+		"volume-1min":str(volume_1min),
+		"volume-percent-1min":str(volume_percent_1min),			
+		"price-2min":str(price_2min),
+		"price-percent-2min":str(price_percent_2min), 
+		"volume-2min":str(volume_2min),
+		"volume-percent-2min":str(volume_percent_2min),
+		"price-3min":str(price_3min),
+		"price-percent-3min":str(price_percent_3min), 
+		"volume-3min":str(volume_3min),
+		"volume-percent-3min":str(volume_percent_3min),
+		"price-5min":str(price_5min),
+		"price-percent-5min":str(price_percent_5min), 
+		"volume-5min":str(volume_5min),
+		"volume-percent-5min":str(volume_percent_5min),
+		"price-10min":str(price_10min),
+		"price-percent-10min":str(price_percent_10min), 
+		"volume-10min":str(volume_10min),
+		"volume-percent-10min":str(volume_percent_10min),
+		"price-15min":str(price_15min),
+		"price-percent-15min":str(price_percent_15min), 
+		"volume-15min":str(volume_15min),
+		"volume-percent-15min":str(volume_percent_15min),
+		"price-30min":str(price_30min),
+		"price-percent-30min":str(price_percent_30min), 
+		"volume-30min":str(volume_30min),
+		"volume-percent-30min":str(volume_percent_30min),
+		"price-1hour":str(price_1hour),
+		"price-percent-1hour":str(price_percent_1hour), 
+		"volume-1hour":str(volume_1hour),
+		"volume-percent-1hour":str(volume_percent_1hour),
+		"price-2hour":str(price_2hour),
+		"price-percent-2hour":str(price_percent_2hour), 
+		"volume-2hour":str(volume_2hour),
+		"volume-percent-2hour":str(volume_percent_2hour),
+		"price-3hour":str(price_3hour),
+		"price-percent-3hour":str(price_percent_3hour), 
+		"volume-3hour":str(volume_3hour),
+		"volume-percent-3hour":str(volume_percent_3hour),
+		"price-6hour":str(price_6hour),
+		"price-percent-6hour":str(price_percent_6hour), 
+		"volume-6hour":str(volume_6hour),
+		"volume-percent-6hour":str(volume_percent_6hour),
+		"price-12hour":str(price_12hour),
+		"price-percent-12hour":str(price_percent_12hour), 
+		"volume-12hour":str(volume_12hour),
+		"volume-percent-12hour":str(volume_percent_12hour),
+		"price-24hour":str(price_24hour),
+		"price-percent-24hour":str(price_percent_24hour), 
+		"volume-24hour":str(volume_24hour),
+		"volume-percent-24hour":str(volume_percent_24hour)}
+	redis_key=symbol+'-STATS'
+	redis_server.hmset(redis_key, prices)
+	return(prices)
+	
+def v24_usd_alerts_cached(exchange,symbol,v24):
+
+	symbol=symbol.upper()
+
+
+	if symbol.endswith('BTC'):
+		key=str(symbol)+'-BTC-USDT-PRICE'
+		if r.get(key):
+			trade_to_price=r.get(key)
+		else:
+			tickers=fetch_prices(exchange,'BTC/USDT')
+			trade_to_price=float(tickers['close'])
+			r.setex(key,120,trade_to_price)
+	elif symbol.endswith('ETH'):
+		key=str(symbol)+'-ETH-USDT-PRICE'
+		if r.get(key):
+			trade_to_price=r.get(key)
+		else:
+			tickers=fetch_prices(exchange,'ETH/USDT')
+			trade_to_price=float(tickers['close'])
+			r.setex(key,120,trade_to_price)
+	elif symbol.endswith('BNB'):
+		key=str(symbol)+'-BNB-USDT-PRICE'
+		if r.get(key):
+			trade_to_price=r.get(key)
+		else:
+			tickers=fetch_prices(exchange,'BNB/USDT')
+			trade_to_price=float(tickers['close'])
+			r.setex(key,120,trade_to_price)
+	else:
+		trade_to_price=1
+	trade_to_price=float(trade_to_price)
+	p24=v24*trade_to_price
+	p24=float(p24)
+	
+	return(p24)
+
 def volume24h_in_usd(symbol):
 
 	exchange=get_exchange()
@@ -245,18 +704,55 @@ def price_usd(symbol):
 	pair_price=float(pair_price)
 	return(pair_price)
 
-def wall_pos(symbol,stoploss,usd_limit):
+def wall_magic(symbol,last_stoploss):
+	
+	exchange=get_exchange()
+	book=fetch_order_book(exchange,symbol,'bids','1000')
+	#New JEdimaster shit lets have at least $100k above us in buy order book set our dynamic stoploss @ that position in the book
+	
+	vol24=float(volume24h_in_usd(symbol))
+	if vol24>100000000:
+		vlimit=vol24/100*0.2
+	elif vol24>50000000 and vol24<100000000:
+		vlimit=vol24/100*0.5
+	elif vol24>25000000 and vol24<50000000:
+		vlimit=vol24/100*0.5
+	else:
+		vlimit=vol24/100*0.5
+	print(symbol)
+		
+	sl_pos=wall_pos(symbol,vlimit)
+	
+	print("LAST STOPLOSS: "+str(last_stoploss))
+	print("STOPLOSS POSITION: "+str(sl_pos))
+	
+	rkt=symbol+"TTT"
+	r.setex(rkt,15,sl_pos)
+	
+	redis_key="bconfig-"+symbol
+	wall_stoploss=float(book[sl_pos][0])
+	if not wall_stoploss:
+		sl_pos=wall_pos(symbol,100000)		
+		wall_stoploss=float(book[sl_pos][0])
+	print("WSL: "+str(wall_stoploss))
+	print("VOLUME V24: "+str(vol24))
+	print("VLIMIT: "+str(vlimit))
+	
+	r.hset(redis_key, 'wall_stoploss',wall_stoploss)
+	
+	return(wall_stoploss)
+
+
+def wall_pos(symbol,usd_limit):
 	
 	#Fucking jedi master shit, lets make sure that theres usd_limit above us in the buy book @ set our dynamic stoploss at that
+	usd_limit=float(usd_limit)
 	pusd=float(price_usd(symbol))
 	exchange=get_exchange()
 	message=""
-	buy_book=exchange.fetch_order_book(symbol,100)
-	print(buy_book)
+	buy_book=exchange.fetch_order_book(symbol,1000)
 	pos=int(0)
 	book=buy_book['bids']
-	print(book)
-	#book.reverse()
 	tv_usd=0
 	got=0
 	print("USD LIMIT: "+str(usd_limit))
@@ -265,12 +761,12 @@ def wall_pos(symbol,stoploss,usd_limit):
 		v=line[1]
 		v_usd=round(float(v)*pusd,2)
 		tv_usd=round(float(tv_usd+v_usd),2)
-		print("DEBUG K: "+str(k))
-		print("DEBUG LSL: "+str(stoploss))
-		print("DEBUG TVUSD: "+str(tv_usd))
-		print("DEBUG USDLIMIT: "+str(usd_limit))
+		#print("DEBUG K: "+str(k))
+		#print("DEBUG TVUSD: "+str(tv_usd))
+		#print("DEBUG USDLIMIT: "+str(usd_limit))
 		#if k>=float(stoploss):
-		message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
+		#message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
+		#print(message)
 		if tv_usd>=usd_limit:
 			print(message)
 			return(pos)
@@ -282,6 +778,16 @@ def wall_pos(symbol,stoploss,usd_limit):
 	return(pos)		
 	print(message)
 	
+def broadcast(chatid,text):
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+	telegram_id=config['binance']['TELEGRAM_ID']
+	token = telegram_id
+	url = "https://api.telegram.org/"+ token + "/sendMessage?chat_id=" + chatid+"&text="+str(text)+"&parse_mode=HTML"
+	r=requests.get(url)
+	html = r.content
+	print(html)
+
 def work_units(symbol,budget):
 
 	symbol=symbol.upper()
@@ -374,10 +880,25 @@ def fetch_last_buy_order(exchange,symbol):
 		print("returning: NULL")
 		return("NULL")
 
+def trade_time(exchange,symbol):
+	
+	trades=exchange.fetchTrades (symbol)
+	
+	c=0
+	for dat in trades:
+		ts=dat['timestamp']	
+		if c==0:
+			start_ts=ts/1000
+	last_ts=ts/1000
+	c+=1
+	elapsed = last_ts - start_ts
+	elapsed=float(elapsed)/60
+	return(elapsed)
+
 def fetch_last_order(exchange,symbol):
-	print("passed: "+str(symbol))
+	#print("passed: "+str(symbol))
 	ret=exchange.fetch_closed_orders (symbol, 1);
-	print(ret)
+	#print(ret)
 	if ret:
 		
 		data=ret[-1]['info']
@@ -436,6 +957,7 @@ def auto_spawn(trading_on,rsi_symbol, symbol, units, trade_from, trade_to, buy_p
 
 	r = redis.Redis(host='localhost', port=6379, db=0)
 	
+	bot_ts=time.time()
 	bot_config = {"trading_on":str(trading_on),
 	"rsi_symbol":str(rsi_symbol), 
 	"symbol":str(bot_name), 
@@ -455,6 +977,7 @@ def auto_spawn(trading_on,rsi_symbol, symbol, units, trade_from, trade_to, buy_p
 	"enable_safeguard":str(enable_safeguard),
 	"force_buy":str(force_buy),
 	"force_sell":str(force_sell),
+	"bot_ts":str(bot_ts),
 	"live":str(live)}
 	
 	all=bot_config
