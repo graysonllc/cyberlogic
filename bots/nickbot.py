@@ -188,6 +188,9 @@ def log_order(exchange,bot_id,order_id,order_type,symbol,rsi_symbol,trade_from,t
 def get_exchange():
 	
 	#Read in our apikeys and accounts
+	blist=r.smembers("botlist")
+	rlimit=int(len(blist))*1200
+	
 	config = configparser.ConfigParser()
 	config.read('/root/akeys/b.conf')
 	conf=config['binance']
@@ -199,7 +202,7 @@ def get_exchange():
     'apiKey': binance_api_key,
     'secret': binance_api_secret,
     'enableRateLimit': True,
-    'rateLimit': 3600,
+    'rateLimit': rlimit,
     'verbose': False,  # switch it to Fal_se if you don't want the HTTP log
 	})
 	return(exchange)
@@ -213,17 +216,19 @@ def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
     return head + replace_with + tail
 
-def diff_percent(low,high
-	):
+def diff_percent(low,high):
 	low=float(low)
 	high=float(high)
-	prices = [low,high]
-	for a, b in zip(prices[::1], prices[1::1]):
-		pdiff=100 * (b - a) / a
-	pdiff=round(pdiff,4)
+	if high>0 and low>0:
+		prices = [low,high]
+		
+		for a, b in zip(prices[::1], prices[1::1]):
+			pdiff=100 * (b - a) / a
+			pdiff=round(pdiff,4)
 
-	return(pdiff)
-
+		return(pdiff)
+	else:
+		return(0)
 
 def get_price(exchange,symbol):
 	
@@ -242,8 +247,8 @@ def price_when(symbol,secs):
 	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
 
 	ts_before = ts_now - datetime.timedelta(seconds=secs)
-	ts_end = ts_before + datetime.timedelta(seconds=20)
-	print(ts_before)
+	ts_end = ts_before + datetime.timedelta(seconds=60)
+	#print(ts_before)
 
 	ts_before_ts=int(time.mktime(ts_before.timetuple()))
 	ts_end_ts=int(time.mktime(ts_end.timetuple()))
@@ -263,7 +268,7 @@ def price_when(symbol,secs):
 		ts,price,volume = data.split(":")
 
 		data={}
-		price=round(float(price),2)
+		price=round(float(price),8)
 		volume=round(float(volume),2)
 				
 		data['price']=float(price)
@@ -271,6 +276,21 @@ def price_when(symbol,secs):
 		return(data)
 	else:	
 		return("ERROR")
+
+def our_prices(pair,price_now,volume_now):
+
+	redis_key=str(pair)+"-HISTORY"
+	ts_now = datetime.datetime.now()
+	ts_now=int(time.mktime(ts_now.timetuple()))	
+	#print(ts_now)
+	ts_now=str(ts_now)
+	
+	#print(str(volume_now))
+	price_set={}
+	store=str(ts_now+':'+str(price_now)+':'+str(volume_now))
+	price_set[store]=ts_now
+	redis_server.zadd(redis_key,price_set)
+	#print("Setting: "+str(redis_key)+" -> "+str(price_set))
 
 def get_rsi(pair,interval):
 	rsi_symbol=pair
@@ -323,8 +343,6 @@ def store_prices(symbol,price,volume):
 		volume_percent_1min=0
 		price_1min=0
 		volume_1min=0
-
-
 
 	#2Minute
 	data=price_when(symbol,120)
@@ -716,9 +734,9 @@ def wall_magic(symbol,last_stoploss):
 	elif vol24>50000000 and vol24<100000000:
 		vlimit=vol24/100*0.5
 	elif vol24>25000000 and vol24<50000000:
-		vlimit=vol24/100*0.5
+		vlimit=vol24/100*1
 	else:
-		vlimit=vol24/100*0.5
+		vlimit=vol24/100*1
 	print(symbol)
 		
 	sl_pos=wall_pos(symbol,vlimit)
@@ -1017,7 +1035,7 @@ def auto_spawn(trading_on,rsi_symbol, symbol, units, trade_from, trade_to, buy_p
 
 	if instant_market_buy=="yes":
 		exchange=get_exchange()
-		buy_book=fetch_order_book(exchange,symbol,'bids','1000')
+		buy_book=fetch_order_book(exchange,symbol,'asks','1000')
 		buy_pos=int(buy_pos)
 		buy_price=float(buy_book[buy_pos][0])
 		print(symbol+" Units Buy Price"+str(buy_price))

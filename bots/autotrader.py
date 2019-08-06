@@ -101,7 +101,7 @@ def fetch_wall_book(exchange,symbol,type,qlimit):
 def walls(symbol):
 	
 	symbol=symbol.upper()
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	buy_book=fetch_wall_book(exchange,symbol,'bids','500')
 	sell_book=fetch_wall_book(exchange,symbol,'asks','500')
 
@@ -131,30 +131,7 @@ def walls(symbol):
 		
 	broadcast(message)
 
-def get_exchange():
-	
-	#Read in our apikeys and accounts
-	config = configparser.ConfigParser()
-	config.read('/root/akeys/b.conf')
-	conf=config['binance']
-	
-	binance_api_key=config['binance']['API_KEY']
-	binance_api_secret=config['binance']['API_SECRET']
-	
-	members=r.smembers("botlist")
-	sizeof=len(members)
-	throttle=sizeof*1200
-
-	exchange = ccxt.binance({
-    'apiKey': binance_api_key,
-    'secret': binance_api_secret,
-    'enableRateLimit': True,
-    'rateLimit': throttle,
-    'verbose': False,  # switch it to False if you don't want the HTTP log
-	})
-	return(exchange)
-
-exchange=get_exchange()
+exchange=nickbot.get_exchange()
 
 def delete_bot(symbol):
 	bot_name=symbol
@@ -165,8 +142,18 @@ def delete_bot(symbol):
 	blacklisted_key=redis_key+"-BLACKLIST"
 	r.setex(blacklisted_key,1800,1)
 
-	all_keys = list(r.hgetall(redis_key).keys())
+	bot_id=r.hget(redis_key,'id').decode('utf-8')
+
+	ckey=str(bot_id)+'-CPS'
+	r.delete(ckey)
+	r.hdel(ckey,"*")
+	
 	r.hdel(redis_key, "*")	
+	r.delete(redis_key)
+	
+	key=str(symbol)+'-SYSTEM-STOPLOSS'
+	mc.delete(key)
+	
 	config = configparser.ConfigParser()
 	config_file='/home/crypto/cryptologic/pid-configs/init.ini'
 	config.read(config_file)
@@ -278,8 +265,6 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 def main(exchange,symbol,c):
 	
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
-
-	conn = redis.Redis('127.0.0.1')
 	
 	redis_order_log="ORDERLOG-"+symbol
 	redis_log="LOG-"+symbol
@@ -288,40 +273,40 @@ def main(exchange,symbol,c):
 	redis_rsi_log="RSILOG-"+symbol
 	ret=0
 
-	bot_id=conn.hget(redis_key,'id').decode('utf-8')
-	trading_on=conn.hget(redis_key,"trading_on")
+	bot_id=r.hget(redis_key,'id').decode('utf-8')
+	trading_on=r.hget(redis_key,"trading_on")
 	trading_on=trading_on.decode('utf-8')
-	rsi_symbol=conn.hget(redis_key,"rsi_symbol")
+	rsi_symbol=r.hget(redis_key,"rsi_symbol")
 	rsi_symbol=rsi_symbol.decode('utf-8')
-	symbol=conn.hget(redis_key,"symbol")
+	symbol=r.hget(redis_key,"symbol")
 	symbol=symbol.decode('utf-8')
-	units=conn.hget(redis_key,"units")
+	units=r.hget(redis_key,"units")
 	units=units.decode('utf-8')
-	trade_from=conn.hget(redis_key,"trade_from")
+	trade_from=r.hget(redis_key,"trade_from")
 	trade_from=trade_from.decode('utf-8')
-	trade_to=conn.hget(redis_key,"trade_to")
+	trade_to=r.hget(redis_key,"trade_to")
 	trade_to=trade_to.decode('utf-8')
-	buy_pos=conn.hget(redis_key,"buy_pos")
+	buy_pos=r.hget(redis_key,"buy_pos")
 	buy_pos=buy_pos.decode('utf-8')	
-	sell_pos=conn.hget(redis_key,"sell_pos")
+	sell_pos=r.hget(redis_key,"sell_pos")
 	sell_pos=sell_pos.decode('utf-8')
-	stoploss_percent=conn.hget(redis_key,"stoploss_percent")
+	stoploss_percent=r.hget(redis_key,"stoploss_percent")
 	stoploss_percent=stoploss_percent.decode('utf-8')
-	safeguard_percent=conn.hget(redis_key,"safeguard_percent")
+	safeguard_percent=r.hget(redis_key,"safeguard_percent")
 	safeguard_percent=safeguard_percent.decode('utf-8')
-	use_stoploss=conn.hget(redis_key,"use_stoploss")
+	use_stoploss=r.hget(redis_key,"use_stoploss")
 	use_stoploss=use_stoploss.decode('utf-8')
-	candle_size=conn.hget(redis_key,"candle_size")
+	candle_size=r.hget(redis_key,"candle_size")
 	candle_size=candle_size.decode('utf-8')
-	rsi_buy=conn.hget(redis_key,"rsi_buy")
+	rsi_buy=r.hget(redis_key,"rsi_buy")
 	rsi_buy=rsi_buy.decode('utf-8')
-	rsi_sell=conn.hget(redis_key,"rsi_sell")
+	rsi_sell=r.hget(redis_key,"rsi_sell")
 	rsi_sell=rsi_sell.decode('utf-8')
-	live=conn.hget(redis_key,"live")
+	live=r.hget(redis_key,"live")
 	live=live.decode('utf-8')
-	enable_safeguard=conn.hget(redis_key,"enable_safeguard")
+	enable_safeguard=r.hget(redis_key,"enable_safeguard")
 	enable_safeguard=enable_safeguard.decode('utf-8')
-	enable_buybacks=conn.hget(redis_key,"enable_buybacks")
+	enable_buybacks=r.hget(redis_key,"enable_buybacks")
 	if enable_buybacks:
 		enable_buybacks=enable_buybacks.decode('utf-8')
 	rsi_sell=float(rsi_sell)
@@ -331,6 +316,7 @@ def main(exchange,symbol,c):
 	use_stoploss=str(use_stoploss)
 	if use_stoploss=='1':
 		use_stoploss=str('yes')
+		
 	units=float(units)
 	sell_pos=int(sell_pos)
 	buy_pos=int(buy_pos)
@@ -420,8 +406,8 @@ def main(exchange,symbol,c):
 				elapsed = time.time() - start_time
 				elapsed=round(elapsed)
 								
-				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+"\n<b>OPEN FOR: </b> "+str(elapsed)+" Seconds\n"+"<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)
-				if open_type=='BUY' and float(elapsed)>1200:
+				message="<b>ALERT:: - "+str(symbol)+" OPEN ORDER\tTYPE:</b> " +str(open_type)+"\n<b>OPEN FOR: </b> "+str(elapsed)+" Seconds\n"+"<b>PRICE:</b> "+str(open_price)+ "\n<b>FILLED:</b> "+str(open_filled)+"/"+str(open_remaining)+"\n<b>ORDER ID:</b> "+str(order_id)+"\t<b>TICKER\tLAST:</b> "+str(last)+" <b>BID:</b> "+str(bid)+" <b>ASK:</b> "+str(ask)				
+				if open_type=='BUY' and float(elapsed)>300:
 					exchange.cancelOrder(order_id,symbol)
 					delete_bot(symbol)		
 					message=message+"\n\n<b>CANCELLING ORDER TO MUCH TIME ELAPSED</b>\n"
@@ -459,6 +445,12 @@ def main(exchange,symbol,c):
 				book=fetch_order_book(exchange,symbol,'bids',1)
 				sell_price=float(book[0][0])
 
+			#IF WE ARE USING A STOPLOSS TRIGGER SET THE THiNG TO TRIGGER STOPLOSS TO THE TRIGGER AND SELL PRICE TO THE STOPLOSS PRICE
+			#if checkpoint_trigger>0:
+			#sell_price=stoploss_price
+			#stoploss_price=checkpoint_trigger
+				
+
 			message="Last buy price: "+str(last_price)+"\tStoploss price: "+str(stoploss_price)+"\tmarket price: "+str(last)
 			log_redis(redis_log,message,c)
 			log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id)
@@ -493,7 +485,21 @@ def main(exchange,symbol,c):
 						print("killing bot/deleting it")	
 						return("kill")
 						key=str(symbol)+'-SL'	
-						mc.set(key,1,86400)			
+						mc.set(key,1,86400)		
+						
+						print("MARKET PRICE: "+str(last))
+						profit_per_unit=float(last)-float(last_price)
+						profit_total=float(profit_per_unit*units)
+						profit_total=round(profit_total,8)
+						prices = [last_price,last]
+						for a, b in zip(prices[::1], prices[1::1]):
+							percent=100 * (b - a) / a
+							percent=round(percent,2)
+						if percent<0:
+							redis_key="bconfig-"+bot_name
+							blacklisted_key=redis_key+"-BLACKLIST"
+							r.setex(blacklisted_key,3600,1)
+
 	else:
 		
 		rsikey="rsi"+str(symbol)
@@ -723,4 +729,3 @@ while True:
 		delete_bot(symbol)			
 		sys.exit("die")
 	c+=1
-	time.sleep(0.5)

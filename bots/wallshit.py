@@ -25,35 +25,82 @@ import talib
 import numpy as np
 import ccxt  # noqa: E402
 
-r = redis.Redis(host='localhost', port=6379, db=0)
+def log_db(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,bid,last,ask,open,close,high,low,bot_id):
 
-symbol='HC/ETH'
-exchange=nickbot.get_exchange()
-print(nickbot.fetch_last_buy_order(exchange,symbol))
-sys.exit("die")
-
-def get_exchange():
+	key=str(symbol)+'-SYSTEM-STOPLOSS'
+	if mc.get(key):
+		stoploss_price=float(mc.get(key))
 	
-	#Read in our apikeys and accounts
 	config = configparser.ConfigParser()
 	config.read('/root/akeys/b.conf')
-	conf=config['binance']
-	
-	binance_api_key=config['binance']['API_KEY']
-	binance_api_secret=config['binance']['API_SECRET']
-	
-	members=r.smembers("botlist")
-	sizeof=len(members)
-	throttle=sizeof*1200
 
-	exchange = ccxt.binance({
-    'apiKey': binance_api_key,
-    'secret': binance_api_secret,
-    'enableRateLimit': True,
-    'rateLimit': throttle,
-    'verbose': False,  # switch it to False if you don't want the HTTP log
-	})
-	return(exchange)
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	market_price=float(close)
+	
+	profit_per_unit=market_price-buy_price
+	profit=float(profit_per_unit*units)
+	profit=round(profit,8)
+	prices = [buy_price,market_price]
+	for a, b in zip(prices[::1], prices[1::1]):
+		profit_percent=100 * (b - a) / a
+		profit_percent=round(profit_percent,2)
+
+	total_invest=units*buy_price
+	total_now=units*market_price	
+
+	total_now=float(total_now)
+	total_now=round(total_now,8)
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = """
+		INSERT INTO at_history(date,date_time,timestamp,symbol,rsi_symbol,trade_from,trade_to,buy_price,units,stoploss_price,profit,profit_percent,total_invest,total_now,bid,last,ask,open,close,high,low,bot_id)
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	"""
+	print(sql)
+	cursor.execute(sql,(symbol,rsi_symbol,trade_from,trade_to,buy_price,units,stoploss_price,profit,profit_percent,total_invest,total_now,bid,last,ask,open,close,high,low,bot_id))
+	db.close()
+
+def log_order(exchange,bot_id,order_id,order_type,symbol,rsi_symbol,trade_from,trade_to,sell_price,units):
+	
+	config = configparser.ConfigParser()
+	config.read('/root/akeys/b.conf')
+
+	mysql_username=config['mysql']['MYSQL_USERNAME']
+	mysql_password=config['mysql']['MYSQL_PASSWORD']
+	mysql_hostname=config['mysql']['MYSQL_HOSTNAME']
+	mysql_database=config['mysql']['MYSQL_DATABASE']
+
+	order_array=nickbot.fetch_last_buy_order(exchange,symbol)
+	buy_price=float(order_array['price'])
+	
+	profit_per_unit=sell_price-buy_price
+	profit=float(profit_per_unit*units)
+	profit=round(profit,8)
+	prices = [buy_price,sell_price]
+	for a, b in zip(prices[::1], prices[1::1]):
+		profit_percent=100 * (b - a) / a
+		profit_percent=round(profit_percent,2)
+
+	db=pymysql.connect(mysql_hostname,mysql_username,mysql_password,mysql_database)
+	cursor = db.cursor()
+	
+	sql = str("""
+		INSERT INTO at_orders(date,date_time,timestamp,bot_id,order_id,symbol,rsi_symbol,trade_from,trade_to,units,buy_price,sell_price,profit,profit_percent) 
+		VALUES (CURRENT_DATE(),NOW(),UNIX_TIMESTAMP(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+	""")
+
+	print(bot_id,order_id,symbol,rsi_symbol,trade_from,trade_to,units,buy_price,sell_price,profit,profit_percent)
+
+	cursor.execute(sql,(bot_id,order_id,symbol,rsi_symbol,trade_from,trade_to,units,buy_price,sell_price,profit,profit_percent))
+	db.close()
+	
+r = redis.Redis(host='localhost', port=6379, db=0)
 
 def fetch_prices(exchange, symbol):
 	ticker = exchange.fetch_ticker(symbol.upper())
@@ -66,7 +113,7 @@ def replace_last(source_string, replace_what, replace_with):
 
 def volume24h_in_usd(symbol):
 
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 
 	symbol=symbol.upper()
 	ticker_symbol=symbol
@@ -96,7 +143,7 @@ def price_usd(symbol):
 	symbol=symbol.upper()
 	ticker_symbol=symbol
 
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 
 	if symbol.endswith('BTC'):
 		ticker_symbol = replace_last(ticker_symbol, '/BTC', '')
@@ -127,7 +174,7 @@ def price_usd(symbol):
 		trade_to='ETH'
 	
 	trade_from=ticker_symbol
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	
 	pair_price=0
 	budget=1
@@ -163,7 +210,7 @@ def price_usd(symbol):
 	pair_price=float(pair_price)
 	return(pair_price)
 
-exchange=get_exchange()
+#exchange=get_exchange()
 def get_price(exchange,symbol):
 	
 	symbol=symbol.upper()	
@@ -172,49 +219,75 @@ def get_price(exchange,symbol):
 	price=float(ticker['last'])
 	return(price)
 
-print(get_price('ONE/USDT'))
-sys.exit("die")
-
-def wall_pos(symbol,stoploss,usd_limit):
+def wall_pos2(symbol,usd_limit):
 	
+	#Fucking jedi master shit, lets make sure that theres usd_limit above us in the buy book @ set our dynamic stoploss at that
+	usd_limit=float(usd_limit)
 	pusd=float(price_usd(symbol))
-	print(pusd)
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	message=""
-	buy_book=exchange.fetch_order_book(symbol,100)
-	#print(buy_book)
+	buy_book=exchange.fetch_order_book(symbol,1000)
+	print(buy_book)
 	pos=int(0)
 	book=buy_book['bids']
-
-	book.reverse()
+	print(book)
+	#book.reverse()
 	tv_usd=0
+	got=0
+	print("USD LIMIT: "+str(usd_limit))
 	for line in book:
 		k=line[0]
 		v=line[1]
 		v_usd=round(float(v)*pusd,2)
 		tv_usd=round(float(tv_usd+v_usd),2)
-		if k>=float(stoploss):
-			print("woop")
-			message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
-			if tv_usd>=usd_limit:
-				print(message)
-				return(pos)		
-		pos+=1
+		#print("DEBUG K: "+str(k))
+		#print("DEBUG TVUSD: "+str(tv_usd))
+		#print("DEBUG USDLIMIT: "+str(usd_limit))
+		#if k>=float(stoploss):
+		message=message+"BOOK POS: "+str(pos)+"\tPRICE: "+str(k)+"\tVOLUME: "+str(v)+"\tVOLUME USD: "+str(v_usd)+"\tTOTAL VOLUME USD: "+str(tv_usd)+"\n"
+		print(message)
+		if tv_usd>=usd_limit:
+			print(message)
+			return(pos)
+			got=1	
 		
+		if got!=1:
+			pos+=1
+			
+	return(pos)		
 	print(message)
 
-symbol='BTG/BTC'
-print(volume24h_in_usd(symbol))
-sys.exit("die")
-	
-sl_pos=wall_pos('ATOM/USDT','5.8',100000)
-print(sl_pos)
-sys.exit("die")
 
+exchange=nickbot.get_exchange()
+
+blist=r.smembers("botlist")
+print(len(blist))
+
+sys.exit("fucker")
+#nickbot.wall_pos('BTC/USDT','100000')
+#print("BNB/USDT:")
+#new_stoploss=float(nickbot.wall_magic('BNB/USDT','11000'))
+#print("ETH/USDT:")
+#new_stoploss=float(nickbot.wall_magic('ETH/USDT','11000'))
+print("LINK/USDT:")
+new_stoploss=float(nickbot.wall_magic('LINK/USDT','11000'))
+trades=exchange.fetchTrades ('LINK/USDT')
+c=0
+for dat in trades:
+	ts=dat['timestamp']	
+	if c==0:
+		start_ts=ts/1000
+	last_ts=ts/1000
+	c+=1
+elapsed = last_ts - start_ts
+elapsed=elapsed/60
+print(elapsed)
+#print(trades)
+sys.exit("die")
 def walls(symbol):
 	
 	#symbol=args[0].upper()
-	exchange=get_exchange()
+	exchange=nickbot.get_exchange()
 	
 	buy_book=exchange.fetch_l2_order_book(symbol,500)
 	sell_book=exchange.fetch_l2_order_book(symbol,500)

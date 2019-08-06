@@ -27,7 +27,9 @@ redis_server = redis.Redis(host='localhost', port=6379, db=0)
 
 def replace_last(source_string, replace_what, replace_with):
     head, _sep, tail = source_string.rpartition(replace_what)
-    return head + replace_with + tail	
+    return head + replace_with + tail
+
+exchange=nickbot.get_exchange()	
 
 def gotbot(symbol):
 	
@@ -89,7 +91,9 @@ def get_price(pair,start_ts,end_ts):
 	print(url)
 	r=requests.get(url)
 	res = (r.content.strip())
+	print("R: "+str(res))
 	status = r.status_code
+	print(status)
 	rsi_status=''
 	trades = json.loads(res.decode('utf-8'))
 	data=trades[0]
@@ -99,14 +103,12 @@ def get_price(pair,start_ts,end_ts):
 	#	p=1
 
 def diff_percent(low,high):
-	if high>0:
-		prices = [low,high]
-		for a, b in zip(prices[::1], prices[1::1]):
-			pdiff=100 * (b - a) / a
-			pdiff=round(pdiff,2)
-		return(pdiff)
-	else:
-		return("")
+	prices = [low,high]
+	for a, b in zip(prices[::1], prices[1::1]):
+		pdiff=100 * (b - a) / a
+	pdiff=round(pdiff,2)
+
+	return(pdiff)
 
 def get_sentiment(symbol):
 	
@@ -160,6 +162,194 @@ def get_sentiment(symbol):
 	dat="\n<b>:::SENTIMENT DATA:::\nBUYS:</b> "+str(buys)+' ('+str(buy_ratio)+'%)\n<b>SELLS:</b> '+str(sells)+' ('+str(sell_ratio)+'%)'+"\n"+'<b>PRICE UP RATIO:</b> '+str(price_up)+' ('+str(price_up_ratio)+'%)'
 	return(dat)
 
+def mojo(pair,price_now):
+
+	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
+
+	blank=1
+	
+	ts_now = datetime.datetime.now()
+	ts_now_ts=int(time.mktime(ts_now.timetuple()))	
+	ts_now_human=datetime.datetime.fromtimestamp(ts_now_ts).strftime("%Y-%m-%d %H:%M:%S")
+
+	key=str(pair)+str("pkey-30secs")
+	if(mc.get(key)):
+		mc.delete(key)
+
+	ts_30secs = ts_now - datetime.timedelta(seconds=30)
+	ts_30secs_ts=int(time.mktime(ts_30secs.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_30secs_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_30_secs_ago=get_price(pair,str(ts_30secs_ts),str(ts_now_ts))
+	if price_30_secs_ago:
+		price_30_secs_ago=float(price_30_secs_ago)
+		print("P30SA")
+		print(price_30_secs_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_30_secs_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 30 Seconds Ago "+str(tsd)+" : "+str(price_30_secs_ago)+" Diff %: "+str(price_diff))
+
+	key=str(pair)+str("pkey-1mins")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_1mins = ts_now - datetime.timedelta(seconds=60)
+	ts_1mins_ts=int(time.mktime(ts_1mins.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_1mins_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_1_mins_ago=get_price(pair,str(ts_1mins_ts),str(ts_now_ts))
+	if price_1_mins_ago:
+		price_1_mins_ago=float(price_1_mins_ago)
+		print("P1MA")
+		print(price_1_mins_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_1_mins_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Mins Ago "+str(tsd)+" : "+str(price_1_mins_ago)+" Diff %: "+str(price_diff))
+
+	key=str(pair)+str("pkey-3mins")
+	if(mc.get(key)):
+		mc.delete(key)
+
+	ts_3mins = ts_now - datetime.timedelta(seconds=180)
+	ts_3mins_ts=int(time.mktime(ts_3mins.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_3mins_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_3_mins_ago=get_price(pair,str(ts_3mins_ts),str(ts_now_ts))
+	if price_3_mins_ago:
+		price_3_mins_ago=float(price_3_mins_ago)
+		print("P3MA")
+		print(price_3_mins_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_3_mins_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+
+	key=str(pair)+str("pkey-5mins")
+	if(mc.get(key)):
+		mc.delete(key)
+		print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 3 Mins Ago "+str(tsd)+" : "+str(price_3_mins_ago)+" Diff %: "+str(price_diff))
+
+	ts_5mins = ts_now - datetime.timedelta(seconds=300)
+	ts_5mins_ts=int(time.mktime(ts_5mins.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_5mins_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_5_mins_ago=get_price(pair,str(ts_5mins_ts),str(ts_now_ts))
+	if price_5_mins_ago:
+		price_5_mins_ago=float(price_5_mins_ago)
+		print("P5MA")
+		print(price_5_mins_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_5_mins_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 5 Mins Ago "+str(tsd)+" : "+str(price_5_mins_ago)+" Diff %: "+str(price_diff))
+
+	key=str(pair)+str("pkey-15mins")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_15mins = ts_now - datetime.timedelta(seconds=900)
+	ts_15mins_ts=int(time.mktime(ts_15mins.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_15mins_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_15_mins_ago=get_price(pair,str(ts_15mins_ts),str(ts_now_ts))
+	if price_15_mins_ago:
+		price_15_mins_ago=float(price_15_mins_ago)
+		print("P15MA")
+		print(price_15_mins_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_15_mins_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_15_mins_ago)+" Diff %: "+str(price_diff))
+	
+	key=str(pair)+str("pkey-1hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_1hour = ts_now - datetime.timedelta(seconds=3600)
+	ts_1hour_ts=int(time.mktime(ts_1hour.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_1hour_ts).strftime("%Y-%m-%d %H:%M:%S")
+	
+	price_1_hours_ago=get_price(pair,str(ts_1hour_ts),str(ts_now_ts))
+	if price_1_hours_ago:
+		price_1_hours_ago=float(price_1_hours_ago)
+		print("P1HA")
+		print(price_1_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_1_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 1 Hour Ago "+str(tsd)+" : "+str(price_1_hours_ago)+" Diff %: "+str(price_diff))
+	
+	key=str(pair)+str("pkey-3hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_3hour = ts_now - datetime.timedelta(seconds=10800)
+	ts_3hour_ts=int(time.mktime(ts_3hour.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_3hour_ts).strftime("%Y-%m-%d %H:%M:%S")
+		
+	price_3_hours_ago=get_price(pair,str(ts_3hour_ts),str(ts_now_ts))
+	if price_3_hours_ago:
+		price_3_hours_ago=float(price_3_hours_ago)
+		print("P3HA")
+		print(price_3_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_3_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 3 Hour Ago: "+str(tsd)+" : "+str(price_3_hours_ago)+" Diff %: "+str(price_diff))
+			threee_hour_up_perc=price_diff
+	key=str(pair)+str("pkey-6hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_6hour = ts_now - datetime.timedelta(seconds=21600)
+	ts_6hour_ts=int(time.mktime(ts_6hour.timetuple()))
+	tsd=datetime.datetime.fromtimestamp(ts_6hour_ts).strftime("%Y-%m-%d %H:%M:%S")
+		
+	price_6_hours_ago=get_price(pair,str(ts_6hour_ts),str(ts_now_ts))
+	if price_6_hours_ago:
+		price_6_hours_ago=float(price_6_hours_ago)
+		print("P6HA")
+		print(price_6_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_6_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" "+str(price_now)+" 6 Hour Ago: "+str(tsd)+" : "+str(price_6_hours_ago)+" Diff %: "+str(price_diff))
+	
+	key=str(pair)+str("pkey-12hour")
+	if(mc.get(key)):
+		mc.delete(key)
+	
+	ts_12hour = ts_now - datetime.timedelta(seconds=43200)
+	ts_12hour_ts=int(time.mktime(ts_12hour.timetuple()))
+
+	tsd=datetime.datetime.fromtimestamp(ts_12hour_ts).strftime("%Y-%m-%d %H:%M:%S")
+		
+	price_12_hours_ago=get_price(pair,str(ts_12hour_ts),str(ts_now_ts))
+	if price_12_hours_ago:
+		price_12_hours_ago=float(price_12_hours_ago)
+		
+		print("P12HA")
+		print(price_12_hours_ago)
+		price_now=float(price_now)
+		price_diff=diff_percent(price_12_hours_ago,price_now)
+		if price_diff:		
+			mc.set(key,price_diff,86400)
+			print("ALERTS::: Price Now: "+str(ts_now_human)+" "+str(price_now)+" 12 Hour Ago: "+str(tsd)+" : "+str(price_12_hours_ago)+" Diff %: "+str(price_diff))
+	#except:
+	#	print("")
+	#sys.exit("Die")
+
+mojo('WTCBTC','0.0002012')
+sys.exit("c")
 def get_rsi(pair,interval):
 
 	arr = []
@@ -208,8 +398,6 @@ def fetch_order_book(exchange,symbol,type,qlimit):
 
 def main():
 	
-	exchange=nickbot.get_exchange()
-	
 	from datetime import date
 	tickers=exchange.fetchTickers()
 	mc = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -248,15 +436,13 @@ def main():
 		price_jump=0
 		alerts=""
 		
-		nickbot.our_prices(symbol,close,qv)
-		
 		#if 'USD' in symbol:
 		#	min_vol=1000000
 		#	skip=0
-		#e#lif 'PAX' in symbol:
+		#elif 'PAX' in symbol:
 		#	min_vol=1000000
 		#	skip=0
-		#lif 'BTC' in symbol:
+		#elif 'BTC' in symbol:
 		#	min_vol=500
 		#	skip=0
 		#elif 'BNB' in symbol:
@@ -265,19 +451,22 @@ def main():
 		#elif 'ETH' in symbol:
 		#	min_vol=1000	
 		#	skip=0
-		#	
-		#if symbol=='BTC/PAX':
-		#	skip=0
 		vol24=float(nickbot.v24_usd_alerts_cached(exchange,coin,qv))
 		vol24=round(vol24,2)
 
-		if vol24>3000000:
+		if vol24>500000:
 			skip=0
-			timetrades=float(nickbot.trade_time(exchange,coin))
-			if timetrades>120:
-				print(str(symbol)+"TRADES TOOK TO LONG")
-				skip=1
-		
+		else:
+			skip=1
+			print(symbol+" VOL TO LOW: "+str(vol24))
+		#	timetrades=float(nickbot.trade_time(exchange,coin))
+		#	if timetrades>60:
+		#		print(str(symbol)+"TRADES TOOK TO LONG")
+		#		skip=1
+		#else:
+		#	print(symbol+" VOL TO LOW: "+str(vol24))
+		#	skip=1
+		#skip=0
 		if 'BCHSV' in symbol:
 			continue
 			
@@ -286,9 +475,7 @@ def main():
 			continue
 		print(symbol)
 		
-		#our_prices(symbol,price)
-		
-		redis_key="ASLASTPRICE-"+symbol+str(date.today())
+		redis_key="ASLASTPRICE-"+symbol
 		if redis_server.get(redis_key):
 			last_price=float(redis_server.get(redis_key))
 			first=0
@@ -316,47 +503,7 @@ def main():
 			pair=symbol
 			
 			#if percent>1 and last_price>0 and price_jump>0.01 and price>last_price or percent>1 and first==1:
-						
-			if float(percent)>1 and float(last_price)>0 and float(price)>last_price or float(percent)>1 and first==1:
-
-				volume=qv
-				prices=nickbot.store_prices(symbol,price,volume)
-				print(prices)
-				price_1min=prices['price-1min']
-				percent_1min=prices['price-percent-1min']
-
-				price_2min=prices['price-2min']
-				percent_2min=prices['price-percent-2min']
-					
-				price_3min=prices['price-3min']
-				percent_3min=prices['price-percent-3min']
-		
-				price_5min=prices['price-5min']
-				percent_5min=prices['price-percent-5min']
-	
-				price_10min=prices['price-10min']
-				percent_10min=prices['price-percent-10min']
-	
-				price_15min=prices['price-15min']
-				percent_15min=prices['price-percent-15min']
-	
-				price_30min=prices['price-30min']
-				percent_30min=prices['price-percent-30min']
-					
-				price_1hour=prices['price-1hour']
-				percent_1hour=prices['price-percent-1hour']
-
-				price_3hour=prices['price-3hour']
-				percent_3hour=prices['price-percent-3hour']
-		
-				price_6hour=prices['price-6hour']
-				percent_6hour=prices['price-percent-6hour']
-	
-				price_12hour=prices['price-12hour']
-				percent_12hour=prices['price-percent-12hour']
-	
-				price_24hour=prices['price-24hour']
-				percent_24hour=prices['price-percent-24hour']
+			if percent>1 and last_price>0 and price>last_price or percent>1 and first==1:
 
 				print("ALERTS DEBUG::: LP: "+str(last_price)+" P: "+str(price)+" D: "+str(price_jump))
 	
@@ -375,26 +522,83 @@ def main():
 					except:
 						print("Rsi is the issue")
 						errors=1					
-					volume=qv
-								
+					
+					#try:
+					mojo(symbol,close)
+					#except:
+					#	#print("Error getting Trades")
+					#	errors=1
+									
+					#print("DBERRORS: "+str(errors))		
+					key=str(pair)+str("pkey-1hour")
+					if mc.get(key):
+						one_hours=mc.get(key)
+					else:
+						one_hours=0
+			
+					key=str(pair)+str("pkey-3hour")
+					if mc.get(key):
+						three_hours=mc.get(key)
+					else:
+						three_hours=0
+							
+					key=str(pair)+str("pkey-6hour")
+					if mc.get(key):
+						six_hours=mc.get(key)
+					else:
+						six_hours=0
+						
+					key=str(pair)+str("pkey-12hour")
+					if mc.get(key):
+						twelve_hours=mc.get(key)
+					else:
+						twelve_hours=0
+				
+					key=str(pair)+str("pkey-15mins")
+					if mc.get(key):
+						fifteen_mins=mc.get(key)
+					else:
+						fifteen_mins=0
+
+					key=str(pair)+str("pkey-30secs")
+					if mc.get(key):
+						thirty_secs=mc.get(key)
+					else:
+						thirty_secs=0
+
+					key=str(pair)+str("pkey-1mins")
+					if mc.get(key):
+						one_mins=mc.get(key)
+					else:
+						one_mins=0
+						
+					key=str(pair)+str("pkey-3mins")
+					if mc.get(key):
+						three_mins=mc.get(key)
+					else:
+						three_mins=0
+						
+					key=str(pair)+str("pkey-5mins")
+					if mc.get(key):
+						five_mins=mc.get(key)
+					else:
+						five_mins=0
+					
 					#Lets log the price every 60 seconds to look for jumps
-					redis_key="ASLASTPRICE-"+symbol+str(date.today())
+					redis_key="ASLASTPRICE-"+symbol
 					if redis_server.get(redis_key):
 						last_price=redis_server.get(redis_key)
 						
-					if errors==0 and float(price)>float(last_price) or errors==0 and first==1:
+					if errors==0 and one_hours>0.05 and float(price)>float(last_price) or errors==0 and one_hours>0.05 and first==1:
 						
-						redis_key="ASLASTPRICE-"+symbol+str(date.today())
-						redis_server.set(redis_key,price)
+						redis_key="ASLASTPRICE-"+symbol
+						redis_server.setex(redis_key,3600,price)
 											
 						link='https://www.binance.com/en/trade/pro/'+csymbol
-						alert_type=' PRICE ALERT: '+str(percent)+'%:::'					
-						
-						#data_add="<b>1M:</b> "+str(percent_1min)+str('%')+",<b>2M:</b> "+str(percent_2min)+str('%')+",<b>3M:</b> "+str(percent_3min)+str('%')+",<b>5M:</b> "+str(percent_5min)+str('%')+",<b>10M:</b> "+str(percent_10min)+str('%')+",<b>15M:</b> "+str(percent_15min)+str('%')+",<b>30M:</b> "+str(percent_30min)+str('%')+",<b>1H:</b> "+str(percent_1hour)+str('%')+",<b>3H:</b> "+str(percent_3hour)+str('%')+",<b>6H:</b> "+str(percent_6hour)+str('%')+",<b>12H:</b> "+str(percent_12hour)+str('%')+",<b>24H:</b> "+str(percent_24hour)+str('%')
-
-						data_add="<b>1M:</b> "+str(price_1min)+" "+str(percent_1min)+str('%')+",<b>2M:</b> "+str(price_2min)+" "+str(percent_2min)+str('%')+",<b>3M:</b> "+str(price_3min)+" "+str(percent_3min)+str('%')+",<b>5M:</b> "+str(price_5min)+" "+str(percent_5min)+str('%')+",<b>10M:</b> "+str(price_10min)+" "+str(percent_10min)+"%,<b>15M:</b> "+str(price_15min)+" "+str(percent_15min)+str('%')+",<b>30M:</b> "+str(price_30min)+" "+str(percent_30min)+str('%')+",<b>1H:</b> "+str(price_1hour)+" "+str(percent_1hour)+str('%')+",<b>3H:</b> "+str(price_3hour)+" "+str(percent_3hour)+str('%')+",<b>6H:</b> "+str(price_6hour)+" "+str(percent_6hour)+str('%')+",<b>12H:</b> "+str(price_12hour)+" "+str(percent_12hour)+str('%')+",<b>24H:</b> "+str(price_24hour)+" "+str(percent_24hour)+str('%')
-
-						data='<b>:::'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(percent)+'%)'+"\n<b>Volume 24H: </b>"+str(vol24) + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
+						alert_type=' PRICE ALERT: '+str(twelve_hours)+'%:::'					
+							
+						data_add="<b>30S:</b> "+str(thirty_secs)+str('%')+", <b>1M:</b> "+str(one_mins)+str('%')+", <b>3M:</b> "+str(three_mins)+str('%')+",<b>5M:</b> "+str(five_mins)+str('%')+", <b>15M:</b> "+str(fifteen_mins)+str('%')+", <b>1H:</b> "+str(one_hours)+str('%')+", <b>3H:</b> "+str(three_hours)+str('%')+", <b>6H:</b> "+str(six_hours)+"%, <b>12H:</b> "+str(twelve_hours)+str('%')
+						data='<b>:::'+str(symbol)+str(alert_type)+"\nPrice: </b>"+str(close)+' ('+str(twelve_hours)+'%)'+"\n<b>Volume 24H: </b>"+str(vol24) + "\n<b>Spread:</b> "+str(pdiff)+"%\n<b>BTC Price:</b> "+str(btc_price)+' ('+str(btc_percent)+'%'+')'+"\n"+str(rsi_stats)+"\n"+str(data_add)+"\n"+str(link)
 
 						timestamp=time.time()
 						ts_raw=timestamp
@@ -412,38 +616,18 @@ def main():
 						alerts=redis_server.lrange(alert_key_all,0,1000)
 												
 						adata=""
-						
 						for alert in alerts:
 							alert=alert.decode('utf-8')
 							vDate, vPrice, vPer = alert.split("\t")
 							if float(vPrice)>float(lp):
 								adata=adata+"\n"+str(vDate)+"\t<b>"+str(vPrice)+"</b>\t<b>"+str(vPer)+"</b>"							
 								lp=vPrice
+							else:
+								adata=adata+"\n"+str(vDate)+"\t<i>"+str(vPrice)+"</i>\t"+str(vPer)
 							a=1
 						
 						alerts_key=str(symbol)+str(date_today)+'-ALERTCYCLES'
 						alerts_today=redis_server.incr(alerts_key)
-
-						alerts_key_rolling=str(symbol)+'-ALERTS30MINS'
-						if redis_server.get(alerts_key_rolling):
-							alerts_30mins=redis_server.incr(alerts_key_rolling)
-						else:
-							redis_server.setex(alerts_key_rolling,1800,1)
-							alerts_30mins=1
-													
-						alerts_key_rolling=str(symbol)+'-ALERTS1HOUR'
-						if redis_server.get(alerts_key_rolling):
-							alerts_1hour=redis_server.incr(alerts_key_rolling)
-						else:
-							redis_server.setex(alerts_key_rolling,3600,1)
-							alerts_1hour=1
-
-						alerts_key_rolling=str(symbol)+'-ALERTS2HOUR'
-						if redis_server.get(alerts_key_rolling):
-							alerts_2hour=redis_server.incr(alerts_key_rolling)
-						else:
-							redis_server.setex(alerts_key_rolling,7200,1)
-							alerts_2hour=2
 						
 						#Lets also make a memcache # of alerts so we can have auto expiry time, lets set expiry to two hours "7200 seconds rolling"
 						mckey=str(pair)+str("MCALERTS")
@@ -455,19 +639,15 @@ def main():
 							grab_mc_counter=mc.get(mckey)
 
 						moon=0
-						if grab_mc_counter>=5 and percent>3 and percent_15min>2:
+						if grab_mc_counter>=5 and percent>3 and fifteen_mins>2:
 							mooning=str(symbol)+'-MOONING'
 							moon=1
 							
 						sent=get_sentiment(coin)
 						data=data+"\n"+str(sent)
-						
-						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(percent)+'%)'
-
 						if a==1:
-							data=data+"\n\n<b>TODAYS ALERTS:</b>\n"+str(adata)+"\n"+str(pdata)
-						else:
-							data=data+"\n\n<b>TODAYS ALERTS:</b>\n"+str(pdata)
+							data=data+"\n\n<b>TODAYS ALERTS:</b>"+str(adata)
+
 						data=str(data)+"\n\n<b>ALERTS TODAY:</b> "+str(alerts_today)
 
 						data=str(data)+"\n\nThis Alert Was Sent AT: "+str(date_time)+" GMT";
@@ -477,13 +657,14 @@ def main():
 						sent_sells_percent=float(redis_server.get('SENT-SELLS'))
 						sent_price_up_ratio=float(redis_server.get('SENT-PRICE-UP-RATIO'))
 						
-						nickbot.log_alert(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts_today,percent_15min,percent_1hour,percent_3hour,percent_6hour,percent_12hour,link)
+						nickbot.log_alert(symbol,price,percent,spread,sent_buys_percent,sent_sells_percent,sent_price_up_ratio,alerts_today,fifteen_mins,one_hours,three_hours,six_hours,twelve_hours,link)
 							
 						#print("DBBBBB")
 						#print("LP: ")
 						#print(last_price)
 						#print("DBBBBB:")
 						#print(price)
+						pdata=str(date_time)+"\t"+str(price)+"\t"+'('+str(twelve_hours)+'%)'
 						
 						alert_key_nd=str(coin)+'-ALL-ALERTS'
 						redis_server.rpush(alert_key_all,pdata)
@@ -529,9 +710,7 @@ def main():
 						if redis_server.get(blacklisted_key):
 							blacklisted=1
 	
-						alerts_today=float(alerts_today)
-						
-						if float(percent_1min)>1 and int(alerts_today)>=1 or float(percent_2min)>1 and int(alerts_today)>=1 or float(percent_3min)>1 and int(alerts_today)>=1 or float(percent_5min)>1 and int(alerts_today)>=1 or float(percent_10min)>1 and int(alerts_today)>=1 or float(percent_15min)>1 and int(alerts_today)>=1 or float(percent_30min)>1 and int(alerts_today)>=1:
+						if one_mins>=0.3 or fifteen_mins>1:
 							dtoday=datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
 							moonkey=str(dtoday)+'-mooning'
 							broadcast_moon('506872080',data)	
@@ -539,7 +718,6 @@ def main():
 							print("Sent a moon shot alert: key:"+str(moonkey))
 							redis_server.sadd(moonkey, symbol)
 							
-							stable_coin=int(0)
 							symbol=symbol.upper()
 							ticker_symbol=symbol
 							if symbol.endswith('BTC'):
@@ -548,7 +726,6 @@ def main():
 							elif symbol.endswith('USDT'):
 								ticker_symbol = replace_last(ticker_symbol, '/USDT', '')
 								trading_to=str('USDT')
-								stable_coin=int(1)
 							elif symbol.endswith('BNB'):
 								ticker_symbol = replace_last(ticker_symbol, '/BNB', '')
 								trading_to=str('BNB')
@@ -564,14 +741,12 @@ def main():
 							elif symbol.endswith('PAX'):
 								ticker_symbol = replace_last(ticker_symbol, '/PAX', '')
 								trading_to=str('PAX')
-								stable_coin=int(1)
 							elif symbol.endswith('USDS'):
 								ticker_symbol = replace_last(ticker_symbol, '/USDS', '')
 								trading_to=str('USDS')
 							elif symbol.endswith('ETH'):
 								ticker_symbol = replace_last(ticker_symbol, '/ETH', '')
 								trading_to=str('ETH')
-								stable_coin=1
 							trading_from=ticker_symbol
 							print("Debug TS: "+str(ticker_symbol))
 							#broadcast_moon('506872080',ticker_symbol)	
@@ -589,8 +764,7 @@ def main():
 							#Lets check the whole bank roll to see if we got enuff dough for the trade
 							balances=exchange.fetch_balance ()
 							bank_balance=float(format(balances[trading_to]['total'],'.8f'))
-							
-							if bank_balance>=balance_needed and stable_coin==1 and coin!='BTC/USDT' and coin!='ETH/BTC':
+							if bank_balance>=balance_needed:
 								
 								#lets check we don't have a bot allready running for this shit and that we didn't exceed max amount of bots
 								botlist=redis_server.smembers("botlist")
@@ -603,7 +777,7 @@ def main():
 									symbol=str(coin)
 									buy_pos=int(0)
 									sell_pos=int(0)
-									stoploss_percent=float(8)
+									stoploss_percent=float(4)
 									use_stoploss=int(1)
 									candle_size=str('5m')
 									safeguard_percent=float(2)

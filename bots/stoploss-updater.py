@@ -32,44 +32,6 @@ print(":::STOPLOSS/MOVER Polling Running Bots\n")
 
 import ccxt  # noqa: E402
 				
-def wall_magic(symbol,last_stoploss):
-	
-	exchange=nickbot.get_exchange()
-	book=nickbot.fetch_order_book(exchange,symbol,'bids','100')
-
-	#New JEdimaster shit lets have at least $100k above us in buy order book set our dynamic stoploss @ that position in the book
-	
-	vol24=float(nickbot.volume24h_in_usd(symbol))
-	if vol24>10000000:
-		vlimit=vol24/100*0.75
-	else:
-		vlimit=vol24/100*0.75
-			
-	print(symbol)
-	print("VOLUME V24: "+str(vol24))
-	print("VLIMIT: "+str(vlimit))
-		
-	sl_pos=nickbot.wall_pos(symbol,last_stoploss,vlimit)
-	if sl_pos==100:
-		sl_pos=99
-	print("LAST STOPLOSS: "+str(last_stoploss))
-	print("STOPLOSS POSITION: "+str(sl_pos))
-	
-	redis_key="bconfig-"+symbol
-	r.hset(redis_key, 'book_pos',sl_pos)
-
-	wall_stoploss=float(book[sl_pos][0])
-	if not wall_stoploss:
-		sl_pos=nickbot.wall_pos(symbol,last_stoploss,50000)		
-		if sl_pos==100:
-			sl_pos=99
-		wall_stoploss=float(book[sl_pos][0])
-	print("WSL: "+str(wall_stoploss))
-	
-	r.hset(redis_key, 'wall_stoploss',wall_stoploss)
-	
-	return(wall_stoploss)
-
 exchange=nickbot.get_exchange()
 
 def loop_bots():
@@ -84,9 +46,17 @@ def loop_bots():
 		last_stoploss=float(0.0)
 		market_price=float(0.0)
 
-		print(str(bot_name))
 		bot_name=bot_name.decode('utf-8')
 		symbol=bot_name.upper()
+		print(str(symbol))
+
+		orders = exchange.fetch_open_orders(symbol,1)
+
+		#IF theres still an open order no bot shit here
+		open_order=len(orders)
+		if open_order:
+			continue
+
 		ts=float(r.get(bot_name))
 		running=datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 		redis_key="bconfig-"+symbol		
@@ -156,50 +126,57 @@ def loop_bots():
 			investment_now=round(investment_now,8)
 			
 			#Stoploss Stuff
-			original_stoploss_percent=r.hget(redis_key,'stoploss_percent').decode('utf-8')
-			original_stoploss_price_ded=buy_price/100*float(original_stoploss_percent)
-			original_stoploss_price=float(buy_price-original_stoploss_price_ded)
-			original_stoploss_price=round(original_stoploss_price,8)
-			key=str(symbol)+'-ORIGINAL-STOPLOSS-PRICE'
-			mc.set(key,original_stoploss_price,86400)
-					
+			#
+			#original_stoploss_percent=r.hget(redis_key,'stoploss_percent').decode('utf-8')
+			#original_stoploss_price_ded=buy_price/100*float(original_stoploss_percent)
+			#original_stoploss_price=float(buy_price-original_stoploss_price_ded)
+			#original_stoploss_price=round(original_stoploss_price,8)
+			#key=str(symbol)+'-ORIGINAL-STOPLOSS-PRICE'
+			#mc.set(key,original_stoploss_price,86400)
+			
+			#key=str(symbol)+'-ORIGINAL-STOPLOSS-PRICE'	
+			#if(mc.get(key)):
+			#	original_stoploss_price=float(mc.get(key))
+			#else:
+			#	if mc.get(key):
+			#		last_stoploss=mc.get(key)		
+				
 			message=":::BOT " +str(symbol)+"\nSTARTED: "+str(running)+str("\nBUY PRICE: ")+str(buy_price)+"\nPRICE NOW: "+str(market_price)+"\nUNITS: "+str(units)
 			message=message+"\nVALUE START "+'('+str(trade_to)+'): '+str(investment_start)
 			message=message+"\nVALUE NOW "+'('+str(trade_to)+'): '+str(investment_now)
 			message=message+"\nP&L: "+str(profit_total)+' ('+str(percent)+'%)'
 			message=message+"\nBOT ID: "+str(bot_id)
-			message=message+"\nORIGINAL STOPLOSS PRICE: "+str(original_stoploss_price)
-			message=message+"\nORIGINAL STOPLOSS PERCENT: "+str(original_stoploss_percent)
 	
 			message_tg="<b>:::BOT " +str(symbol)+"</b>\n<b>STARTED:</b> "+str(running)+str("\n<b>BUY PRICE:</b> ")+str(buy_price)+"\n<b>PRICE NOW:</b> "+str(market_price)+"\n<b>UNITS:</b> "+str(units)
 			message_tg=message_tg+"\n<b>VALUE START "+'('+str(trade_to)+'):</b> '+str(investment_start)
 			message_tg=message_tg+"\n<b>VALUE NOW "+'('+str(trade_to)+'):</b> '+str(investment_now)
 			message_tg=message_tg+"\n<b>P&L:</b> "+str(profit_total)+' ('+str(percent)+'%)'
 			message_tg=message_tg+"\n<b>BOT ID:</b> "+str(bot_id)
-			message_tg=message_tg+"\n<b>ORIGINAL STOPLOSS PRICE:</b> "+str(original_stoploss_price)
-			message_tg=message_tg+"\n<b>ORIGINAL STOPLOSS PERCENT:</b> "+str(original_stoploss_percent)
 	
-			
-			#if profit_total>0:
-			
-			print("PROFIT TOTAL;"+str(profit_total))
-			#sys.exit("die")
-			dec=market_price/100*float(original_stoploss_percent)
-			new_stoploss=market_price-dec	
-			new_stoploss=round(new_stoploss,8)
-
 			key=str(symbol)+'-SYSTEM-STOPLOSS'
 			
 			if mc.get(key):
 				last_stoploss=mc.get(key)		
-			
-			#new_stoploss=float(wall_magic(symbol,last_stoploss))
+			else:
+				last_stoploss=int(0)
+				
+			new_stoploss=float(nickbot.wall_magic(symbol,last_stoploss))
 			print("NEW SL ADD: "+str(new_stoploss))
 			print(new_stoploss)
 							
 			print("FUCKINGDB NSL: "+str(symbol)+" "+str(new_stoploss))
 			print("FUCKINGDB LSL: "+str(symbol)+" "+str(last_stoploss))	
-			if new_stoploss>last_stoploss:
+			
+			
+			diff=nickbot.diff_percent(last_stoploss,new_stoploss)
+			diff_abs=abs(diff)
+
+			if new_stoploss>last_stoploss and diff>=0.05:
+			
+				rkt=symbol+"TTT"
+				sl_pos=int(r.get(rkt))
+				r.hset(redis_key, 'book_pos',sl_pos)
+
 				ikey=str(bot_id)+'-GOALPOSTS'
 				cycles=r.incr(ikey)
 					
@@ -219,16 +196,11 @@ def loop_bots():
 
 				ckey=str(bot_id)+'-CPS'
 				if r.hget(ckey,"checkpoints"):
-		
-					checkpoint_stoploss=float(r.hget(ckey, 'checkpoint_stoploss').decode('utf-8'))
-					checkpoint_stoploss_trigger_add=float(check_point_stoploss)/100*0.5
-					checkpoint_stoploss_trigger=float(checkpoint_stoploss)+float(checkpoint_stoploss_trigger_add)
-					r.hset(ckey, 'checkpoint_trigger',checkpoint_stoploss_trigger)
 					checkpoints=int(r.hget(ckey, 'checkpoints').decode('utf-8'))
-					message=message+"\nLAST CHECKPOINT: "+str(checkpoint_stoploss)
+					message=message+"\nLAST CHECKPOINT: "+str(new_stoploss)
 					message=message+"\nCHECKPOINTS: "+str(checkpoints)
 			
-					message_tg=message_tg+"\n<b>LAST CHECKPOINT:</b> "+str(checkpoint_stoploss)
+					message_tg=message_tg+"\n<b>LAST CHECKPOINT:</b> "+str(new_stoploss)
 					message_tg=message_tg+"\n<b>CHECKPOINTS:</b> "+str(checkpoints)
 		
 					bkey=str(symbol)+'-UPDATE'
@@ -241,6 +213,11 @@ def loop_bots():
 					print(message_tg)
 					
 			elif last_stoploss==0:
+				
+				#come back to this			
+				#original_stoploss_price=float(nickbot.wall_magic(symbol,0))
+
+				original_stoploss_price=float(nickbot.wall_magic(symbol,0))
 				print("First Time Set :"+str(key)+" Stoploss to "+str(original_stoploss_price))
 				key=str(symbol)+'-SYSTEM-STOPLOSS'
 				mc.set(key,original_stoploss_price,864000)	
